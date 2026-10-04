@@ -23,4 +23,4 @@ jobs:
     permissions:
       actions: read
       contents: read
-      # Refresh shared @main resolution after canonical release-engine repair.
+      # Refresh shared @main resolution after canonical pnpm policy repair.
