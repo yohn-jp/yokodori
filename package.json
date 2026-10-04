@@ -28,7 +28,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --test test/*.test.mjs",
+    "test": "npm run build && node --test test/*.test.mjs",
     "verify": "npm run build && npm run boundaries && npm test",
     "boundaries": "node scripts/boundaries.mjs",
     "prepack": "npm run build",
@@ -44,6 +44,7 @@
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.0.2",
+    "@earendil-works/pi-ai": "1.0.2",
     "@types/node": "^22.0.0",
     "typescript": "^5.9.0"
   },
