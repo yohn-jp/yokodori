@@ -120,7 +120,7 @@ test('packed npm artifact imports and loads through Pi install/discovery without
   const consumer = join(temporary, 'sdk-consumer');
   run('npm', ['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--prefix', consumer, tarball], { cwd: root });
   const manifest = JSON.parse(await readFile(join(consumer, 'node_modules/yokodori/package.json'), 'utf8'));
-  assert.equal(manifest.version, '0.1.1');
+  assert.equal(manifest.version, JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version);
   assert.deepEqual(manifest.pi.extensions, ['./dist/adapters/pi/package-extension.js']);
   assert.equal(manifest.peerDependencies['@earendil-works/pi-coding-agent'], '*');
   assert.equal(manifest.peerDependenciesMeta['@earendil-works/pi-coding-agent'].optional, true);
@@ -177,10 +177,10 @@ test('packed npm artifact imports and loads through Pi install/discovery without
     npm_config_fetch_timeout: '15000',
   };
   const piCli = join(root, 'node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js');
-  const installOutput = await runAsync(process.execPath, [piCli, 'install', 'npm:yokodori@0.1.1'], {
+  const installOutput = await runAsync(process.execPath, [piCli, 'install', `npm:yokodori@${manifest.version}`], {
     cwd: project, env: agentEnvironment,
   });
-  assert.match(installOutput, /Installed npm:yokodori@0\.1\.1/);
+  assert.ok(installOutput.includes(`Installed npm:yokodori@${manifest.version}`));
   const installedPackage = join(packageRoot, 'npm/node_modules/yokodori');
   assert.ok(existsSync(join(installedPackage, 'dist/adapters/pi/package-extension.js')));
   assert.equal(existsSync(join(packageRoot, 'npm/node_modules/@earendil-works/pi-coding-agent')), false);
