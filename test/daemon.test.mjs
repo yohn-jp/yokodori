@@ -111,7 +111,11 @@ test('dashboard renders conversation observations and keeps snapshot/SSE selecti
       'context.injected': event('two', 4, 'context.injected', { state: 'injected', boundary: 'pi' }),
       'context.observed': event('two', 5, 'context.observed', { requestSequence: 1, boundary: 'pi', complete: true, certification: 'MATCH' })
     },
-    events: [event('two', 1), event('two', 2, 'git.observed', { root: '/repo', branch: 'main', head: 'a'.repeat(40), dirty: 'clean' }), message(6, 'user', 'What changed?'), message(7, 'assistant', 'The <b>status</b> is clean.', true, 64)]
+    events: [event('two', 1), event('two', 2, 'git.observed', { root: '/repo', branch: 'main', head: 'a'.repeat(40), dirty: 'clean' })],
+    messages: [
+      { sequence: 6, observedAt: '2026-01-01T00:00:06.000Z', role: 'user', text: 'What changed?', truncated: false },
+      { sequence: 7, observedAt: '2026-01-01T00:00:07.000Z', role: 'assistant', text: 'The <b>status</b> is clean.', truncated: true, originalBytes: 64 }
+    ]
   };
   const streamOne = { streamId: 'one', sequence: 1, closed: false, latest: {}, events: [event('one', 1)] };
   snapshot = { streams: [streamOne, streamTwo] };
