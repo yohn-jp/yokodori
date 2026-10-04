@@ -63,20 +63,23 @@ test('Pi final-message observation emits only bounded user and assistant text', 
     handlers.get('message_end')({ message: { role: 'user', content: [
       { type: 'text', text: 'first part' }, { type: 'image', data: 'hidden image bytes' }, { type: 'text', text: 'second part' },
     ] } });
+    handlers.get('message_end')({ message: { role: 'user', content: 'b'.repeat(MAX_MESSAGE_TEXT_BYTES + 3) } });
     handlers.get('message_end')({ message: { role: 'assistant', content: [
       { type: 'thinking', thinking: 'private reasoning' }, { type: 'text', text: 'あ'.repeat(MAX_MESSAGE_TEXT_BYTES / 3 + 1) },
     ] } });
-    await wait(async () => (await (await fetch(url + '/api/v1/streams')).json())[0]?.messageHistory?.retainedCount === 2);
+    await wait(async () => (await (await fetch(url + '/api/v1/streams')).json())[0]?.messageHistory?.retainedCount === 3);
     const snapshot = await (await fetch(url + '/api/v1/snapshot')).json();
     const stream = snapshot.streams[0];
     assert.deepEqual(stream.messages[0], { sequence: 2, observedAt: stream.messages[0].observedAt,
       role: 'user', text: 'first part\nsecond part', truncated: false });
     assert.deepEqual(stream.messages[1], { sequence: 3, observedAt: stream.messages[1].observedAt,
+      role: 'user', text: 'b'.repeat(MAX_MESSAGE_TEXT_BYTES), truncated: true, originalBytes: MAX_MESSAGE_TEXT_BYTES + 3 });
+    assert.deepEqual(stream.messages[2], { sequence: 4, observedAt: stream.messages[2].observedAt,
       role: 'assistant', text: 'あ'.repeat(MAX_MESSAGE_TEXT_BYTES / 3), truncated: true, originalBytes: MAX_MESSAGE_TEXT_BYTES + 1 });
-    assert.equal(stream.messageHistory.truncatedCount, 1);
+    assert.equal(stream.messageHistory.truncatedCount, 2);
     assert.equal(stream.messageHistory.incomplete, true);
     assert.doesNotMatch(JSON.stringify(stream), /hidden system prompt|hidden image bytes|private reasoning/);
-    assert.deepEqual(stream.events.filter(event => event.kind === 'message.observed').map(event => event.payload.role), ['user', 'assistant']);
+    assert.deepEqual(stream.events.filter(event => event.kind === 'message.observed').map(event => event.payload.role), ['user', 'user', 'assistant']);
   } finally {
     await daemon.close();
     if (previous === undefined) delete process.env.YOKODORI_RUNTIME_DIR; else process.env.YOKODORI_RUNTIME_DIR = previous;

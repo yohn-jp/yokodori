@@ -27,11 +27,14 @@ function utf8Prefix(value: string, maxBytes: number): { text: string; bytes: num
 function messagePayload(message: unknown): MessagePayload | undefined {
   if (message === null || typeof message !== 'object') return undefined;
   const candidate = message as { role?: unknown; content?: unknown };
-  if ((candidate.role !== 'user' && candidate.role !== 'assistant') || !Array.isArray(candidate.content)) return undefined;
+  if (candidate.role !== 'user' && candidate.role !== 'assistant') return undefined;
+  const content = typeof candidate.content === 'string' ? [{ type: 'text', text: candidate.content }]
+    : Array.isArray(candidate.content) ? candidate.content : undefined;
+  if (!content) return undefined;
   let originalBytes = 0;
   let retainedBytes = 0;
   const parts: string[] = [];
-  for (const block of candidate.content) {
+  for (const block of content) {
     if (block === null || typeof block !== 'object' || !('type' in block) || block.type !== 'text' ||
       !('text' in block) || typeof block.text !== 'string' || block.text.length === 0) continue;
     const text = block.text;
