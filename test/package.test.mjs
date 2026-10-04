@@ -17,6 +17,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import { snapshot } from '../dist/core/outbound.js';
+import { createYokodori } from '../dist/sdk/index.js';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const fidelity = { boundary: 'pi.context_with_system', providerEffective: false };
@@ -48,7 +49,7 @@ function runAsync(command, args, options = {}) {
   });
 }
 
-async function capturedProviderContext({ cwd, agentDir, withPackage }) {
+async function capturedProviderContext({ cwd, agentDir, withPackage, admitted }) {
   const received = [];
   const settingsManager = withPackage
     ? SettingsManager.create(cwd, agentDir)
@@ -63,8 +64,8 @@ async function capturedProviderContext({ cwd, agentDir, withPackage }) {
     const loaded = resourceLoader.getExtensions();
     const extension = loaded.extensions.find(({ path }) => path.endsWith('package-extension.js'));
     assert.ok(extension, 'Pi did not discover the packed manifest entrypoint');
-    assert.ok(extension.handlers.has('context_with_system'), 'Pi did not load the passive observer hook');
-    assert.equal(extension.handlers.has('before_agent_start'), false, 'the package must use passive control mode');
+    assert.ok(extension.commands.has('yokodori'), 'Pi did not load the admission command');
+    assert.equal(extension.handlers.has('before_agent_start'), false, 'unconfigured package must not inject');
     assert.deepEqual(loaded.errors, []);
     assert.equal((loaded.warnings ?? []).some(({ warning }) => warning.includes('duplicate runtime modules')), false);
   }
@@ -94,7 +95,25 @@ async function capturedProviderContext({ cwd, agentDir, withPackage }) {
   });
   await session.bindExtensions({});
   try {
+    if (admitted) {
+      await session.prompt(`/yokodori ${JSON.stringify(admitted)}`);
+      const extension = resourceLoader.getExtensions().extensions.find(({ path }) => path.endsWith('package-extension.js'));
+      assert.ok(extension.handlers.has('before_agent_start'), 'admission must register injection');
+      assert.ok(extension.handlers.has('context_with_system'), 'admission must register observation');
+    }
     await session.prompt('Package passivity fixture');
+    if (admitted) {
+      const extension = resourceLoader.getExtensions().extensions.find(({ path }) => path.endsWith('package-extension.js'));
+      const notices = [];
+      await extension.commands.get('yokodori').handler('', { ui: { notify: text => notices.push(JSON.parse(text)) } });
+      const proof = notices[0];
+      assert.equal(proof.boundary, 'pi.context_with_system');
+      assert.equal(proof.requestSequence, 1);
+      assert.equal(proof.complete, true, JSON.stringify(proof));
+      assert.equal(proof.represented, true, JSON.stringify(proof));
+      assert.equal(proof.compiledDigest, createYokodori().compile(admitted).digest);
+      assert.match(proof.snapshotDigest, /^[a-f0-9]{64}$/);
+    }
   } finally {
     session.dispose();
   }
@@ -102,7 +121,7 @@ async function capturedProviderContext({ cwd, agentDir, withPackage }) {
   return snapshot(received[0].messages, 0, fidelity).messages;
 }
 
-test('packed npm artifact imports and loads through Pi install/discovery without changing context', async t => {
+test('packed npm artifact: Pi install, command admission, append injection and observed certification', async t => {
   const temporary = await mkdtemp(join(tmpdir(), 'yokodori-package-'));
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const packOutput = execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', temporary], {
@@ -188,7 +207,11 @@ test('packed npm artifact imports and loads through Pi install/discovery without
 
   const baseline = await capturedProviderContext({ cwd: project, agentDir: join(temporary, 'baseline-agent'), withPackage: false });
   const packaged = await capturedProviderContext({ cwd: project, agentDir: packageRoot, withPackage: true });
-  assert.deepEqual(packaged, baseline, 'loading the packed extension must preserve provider-bound context');
+  assert.deepEqual(packaged, baseline, 'unconfigured extension must preserve provider-bound context');
+  const admitted = { task: { id: 'fixture-task', kind: 'task', content: 'admitted package fixture' } };
+  const injected = await capturedProviderContext({ cwd: project, agentDir: packageRoot, withPackage: true, admitted });
+  const compiled = createYokodori().compile(admitted);
+  assert.ok(injected.some(message => message.role === 'system' && message.payload.sections?.yokodori_initial_context?.includes(compiled.text)), 'observed system section must contain exact compiled payload');
 
   const cliLoad = run(process.execPath, [piCli, '--help'], { cwd: project, env: agentEnvironment });
   assert.equal(cliLoad.includes('Failed to load extension'), false, 'Pi CLI must load the installed package without errors');
