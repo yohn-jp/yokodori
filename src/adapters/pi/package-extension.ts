@@ -2,6 +2,8 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { snapshot } from '../../core/outbound.js';
 import { digest } from '../../language/canonical.js';
 import { instructionFile, loadInstructions } from './instruct.js';
+import { createBridge } from './bridge.js';
+import { observeGit } from './git-observation.js';
 
 type Status = { state: 'unconfigured' | 'ready' | 'observed' | 'configuration_failure' | 'certification_failure';
   instructionFile: string; sourceCount?: number; compiledDigest?: string; requestSequence?: number;
@@ -12,20 +14,31 @@ export default function yokodoriPackageExtension(pi: ExtensionAPI): void {
   let status: Status = { state: 'unconfigured', instructionFile };
   let compiled: Awaited<ReturnType<typeof loadInstructions>>;
   let sequence = 0;
+  let bridge = createBridge();
   pi.on('session_start', async (_event, ctx) => {
+    bridge = createBridge();
+    bridge.emit({ kind: 'stream.opened', payload: {} });
+    const sessionBridge = bridge;
+    void observeGit(ctx.cwd).then(git => { if (git) sessionBridge.emit({ kind: 'git.observed', payload: git }); }).catch(() => {});
     sequence = 0;
     compiled = undefined;
     status = { state: 'unconfigured', instructionFile };
     try {
       compiled = await loadInstructions(ctx.cwd);
-      if (compiled) status = { state: 'ready', instructionFile, sourceCount: compiled.sourceCount, compiledDigest: compiled.compiled.digest };
+      if (compiled) {
+        status = { state: 'ready', instructionFile, sourceCount: compiled.sourceCount, compiledDigest: compiled.compiled.digest };
+        bridge.emit({ kind: 'context.compiled', payload: { digest: compiled.compiled.digest, sourceCount: compiled.sourceCount, rendererVersion: compiled.compiled.rendererVersion } });
+      }
     } catch {
       status = { state: 'configuration_failure', instructionFile, failure: 'Invalid or unreadable manifest/source' };
       ctx.ui.notify(JSON.stringify(status), 'error');
     }
   });
   pi.on('before_agent_start', event => {
-    if (compiled) event.systemPromptOptions.sections['yokodori_initial_context'] = compiled.compiled.text;
+    if (compiled) {
+      event.systemPromptOptions.sections['yokodori_initial_context'] = compiled.compiled.text;
+      bridge.emit({ kind: 'context.injected', payload: { state: 'injected', boundary: 'before_agent_start' } });
+    }
   });
   pi.on('context_with_system', event => {
     if (!compiled) return;
@@ -54,8 +67,13 @@ export default function yokodoriPackageExtension(pi: ExtensionAPI): void {
     } catch {
       status = { state: 'certification_failure', ...base, complete: false, matched: false, failure: 'Observation failed' };
     }
+    bridge.emit({ kind: 'context.observed', completeness: status.complete ? 'complete' : 'partial',
+      payload: { requestSequence: current, boundary: 'pi.context_with_system', complete: status.complete ?? false,
+        ...(status.observedInjectedDigest ? { observedDigest: status.observedInjectedDigest } : {}),
+        certification: status.matched ? 'MATCH' : 'MISMATCH' } });
     // Notification only; observation never changes the provider request.
   });
+  pi.on('session_shutdown', () => { bridge.emit({ kind: 'stream.closed', payload: {} }); });
   pi.registerCommand('yokodori', {
     description: 'Show bounded Yokodori instruction and observation status',
     handler: async (args, ctx) => {

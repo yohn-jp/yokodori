@@ -147,6 +147,10 @@ test('packed npm artifact: manifest admission before first request and observed 
   const manifest = JSON.parse(await readFile(join(consumer, 'node_modules/yokodori/package.json'), 'utf8'));
   assert.equal(manifest.version, JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version);
   assert.deepEqual(manifest.pi.extensions, ['./dist/adapters/pi/package-extension.js']);
+  assert.equal(manifest.bin.yokodori, './dist/daemon/cli.js');
+  const executable = join(consumer, 'node_modules/.bin/yokodori');
+  assert.match(run(executable, ['--help'], { cwd: consumer }), /Usage: yokodori daemon/);
+  assert.equal(run(executable, ['--version'], { cwd: consumer }).trim(), manifest.version);
   assert.equal(manifest.peerDependencies['@earendil-works/pi-coding-agent'], '*');
   assert.equal(manifest.peerDependenciesMeta['@earendil-works/pi-coding-agent'].optional, true);
   const importCheck = run(process.execPath, ['--input-type=module', '-e',
