@@ -713,20 +713,29 @@ The only interactive behavior needed initially is navigation/filtering within al
 
 This prevents the observability plane from accidentally becoming a second control plane.
 
-## 18. Local transport
+## 18. Loopback HTTP transport
 
-Wave 0 should separate ingestion transport from browser transport.
+Wave 0 uses one loopback HTTP service for both adapter ingestion and browser reads.
 
 Recommended shape:
 
 ```text
-adapter -> local IPC -> daemon
-browser -> loopback HTTP -> daemon
+adapter -> HTTP POST -> Yokodori daemon
+browser -> HTTP/SSE -> Yokodori daemon
 ```
 
-On Linux/NixOS, a Unix-domain socket is the preferred ingestion transport.
+The distinction between transport and protocol is explicit:
 
-A runtime endpoint descriptor can expose the active socket and dashboard endpoint.
+```text
+HTTP / /api/v1/*       = transport and daemon API surface
+ObservationEventV1     = durable Yokodori observation protocol
+```
+
+The canonical event schema must therefore remain independent from HTTP request mechanics so another transport can be added later without changing event meaning.
+
+The daemon binds only to loopback (`127.0.0.1` and, when supported consistently, `::1`). Wave 0 must not expose `0.0.0.0` or a LAN/public listener.
+
+A runtime endpoint descriptor may expose the selected loopback endpoint without requiring a globally fixed port.
 
 Example conceptual descriptor:
 
@@ -735,30 +744,39 @@ Example conceptual descriptor:
   "version": 1,
   "pid": 12345,
   "protocol": 1,
-  "ingest": {
-    "transport": "unix",
-    "path": "/run/user/1000/yokodori/daemon.sock"
-  },
-  "dashboard": {
-    "url": "http://127.0.0.1:43120/"
-  }
+  "baseUrl": "http://127.0.0.1:43120"
 }
 ```
 
-The concrete path/port is not architecture authority.
+A minimal API shape is:
 
-The durable contract is:
+```text
+POST /api/v1/streams
+POST /api/v1/streams/{streamId}/events
 
-- local only by default;
-- discoverable;
-- versioned;
+GET  /api/v1/streams
+GET  /api/v1/streams/{streamId}
+GET  /api/v1/snapshot
+GET  /api/v1/events
+GET  /health
+GET  /
+```
+
+`GET /api/v1/events` is the read-only server-sent-events stream for dashboard live updates.
+
+The durable transport constraints are:
+
+- loopback HTTP only by default;
+- one daemon endpoint for adapters, API, SSE, and dashboard;
+- discoverable and versioned;
 - no hard-coded globally fixed port requirement;
-- browser served through loopback;
-- remote/tunnel automation deferred.
+- no authentication requirement while the service is strictly loopback-only;
+- remote bind requires a future explicit authentication/transport-security design;
+- SSH port forwarding may expose the one daemon port operationally, but tunnel automation is deferred.
 
 ## 19. Live update transport
 
-For the dashboard, server-sent events are a suitable initial mechanism because the first UI is read-only and daemon-to-browser updates dominate.
+For the dashboard, server-sent events are the Wave 0 live-update mechanism because the first UI is read-only and daemon-to-browser updates dominate.
 
 Conceptually:
 
@@ -1086,7 +1104,7 @@ Checkpoint, classification, and lineage surfaces are structurally ready but do n
 13. The primary UI is the execution timeline, not daemon infrastructure.
 14. Raw model-visible context is not persisted or exposed by default.
 15. Cross-host federation and SSH/tunnel automation are deferred.
-16. The event schema is more durable than its transport.
+16. Loopback HTTP is the Wave 0 transport; the event schema remains more durable than its transport.
 17. Multi-stream/fork topology is modeled without making Yokodori the fork executor.
 18. The daemon remains useful without Tsukai, Hachidori, or a browser.
 19. The dashboard remains useful without semantic classifications.
