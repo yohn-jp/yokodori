@@ -18,10 +18,13 @@ function isMessageObservation(event) {
     (payload.originalBytes === undefined || (Number.isSafeInteger(payload.originalBytes) && payload.originalBytes >= 0));
 }
 
-function renderConversation(events) {
+function renderConversation(source) {
   const conversation = document.getElementById('conversation');
   conversation.replaceChildren();
-  const messages = (events ?? []).filter(isMessageObservation);
+  const messages = (source ?? []).map(item => isMessageObservation(item)
+    ? { sequence: item.sequence, observedAt: item.observedAt, ...item.payload }
+    : item).filter(message => (message?.role === 'user' || message?.role === 'assistant') &&
+      typeof message.text === 'string' && typeof message.truncated === 'boolean');
   if (messages.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'conversation-empty';
@@ -41,7 +44,7 @@ function renderConversation(events) {
   list.className = 'message-list';
   list.setAttribute('aria-label', 'Observed conversation messages');
   for (const event of messages) {
-    const payload = event.payload;
+    const payload = event;
     const item = document.createElement('li');
     item.className = `message-card message-${payload.role}`;
     const header = document.createElement('div');
@@ -49,10 +52,10 @@ function renderConversation(events) {
     textElement(header, 'strong', 'message-role', payload.role === 'user' ? 'User' : 'Assistant');
     const time = document.createElement('time');
     time.className = 'message-meta';
-    time.dateTime = event.observedAt;
-    time.textContent = event.observedAt;
+    time.dateTime = payload.observedAt;
+    time.textContent = payload.observedAt;
     header.append(time);
-    textElement(header, 'span', 'message-meta', `#${event.sequence}`);
+    textElement(header, 'span', 'message-meta', `#${payload.sequence}`);
     item.append(header);
     textElement(item, 'p', 'message-text', payload.text);
     if (payload.truncated || payload.originalBytes !== undefined) {
@@ -104,7 +107,7 @@ async function refresh() {
       row.textContent = `${event.observedAt} · ${event.kind} · #${event.sequence}${detail}`;
       timeline.append(row);
     }
-    renderConversation(current?.events);
+    renderConversation(current?.messages ?? current?.events);
   } catch {
     document.getElementById('current').textContent = 'Observation unavailable';
   }
