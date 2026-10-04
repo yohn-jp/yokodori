@@ -986,6 +986,6 @@ Daemon health, protocol version, socket paths, and full digest values are second
 
 Raw model-visible context remains sensitive and is not persisted or exposed by default. Initial daemon state should be bounded and in-memory. Durable semantic history requires an explicit later persistence/privacy contract.
 
-Adapter-to-daemon communication uses a versioned canonical observation protocol whose semantic schema is independent from its local transport. Pi-native hooks and message types remain confined to the Pi adapter.
+Adapter-to-daemon communication uses loopback HTTP in the first daemon architecture. The HTTP API is transport; the versioned canonical observation event is the durable protocol, so its semantic schema remains independent from HTTP request mechanics. The same loopback service serves read APIs, SSE live updates, and the HTML dashboard. Pi-native hooks and message types remain confined to the Pi adapter. Remote bind is outside the initial authority and requires a future authentication/transport-security design.
 
 The detailed proposed architecture and Wave sequencing are defined in `docs/epics/0002-daemon-dashboard-observability-plane.md`. Wave 0 is tracked by #25.
