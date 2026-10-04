@@ -1,0 +1,20 @@
+{
+  "name": "yokodori",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "exports": {
+    ".": { "types": "./dist/sdk/index.d.ts", "import": "./dist/sdk/index.js" },
+    "./pi": { "types": "./dist/adapters/pi/index.d.ts", "import": "./dist/adapters/pi/index.js" }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.mjs",
+    "verify": "npm run build && npm run boundaries && npm test",
+    "boundaries": "node scripts/boundaries.mjs"
+  },
+  "dependencies": { "@earendil-works/pi-coding-agent": "1.0.2" },
+  "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.9.0" }
+}

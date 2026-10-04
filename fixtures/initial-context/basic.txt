@@ -1,0 +1,15 @@
+Yokodori initial context v1
+Profile: balanced
+
+[Repository instructions]
+Source: a
+5:
+Read.
+Source: b
+5:
+Test.
+
+[Task]
+Source: issue-1
+23:
+Implement the boundary.
