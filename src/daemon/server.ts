@@ -30,6 +30,10 @@ export function createDaemon() {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'" });
         return res.end(await readFile(fileURLToPath(new URL('../dashboard/index.html', import.meta.url))));
       }
+      if (req.method === 'GET' && path === '/dashboard.css') {
+        res.writeHead(200, { 'content-type': 'text/css; charset=utf-8', 'cache-control': 'no-store' });
+        return res.end(await readFile(fileURLToPath(new URL('../dashboard/dashboard.css', import.meta.url))));
+      }
       if (req.method === 'GET' && path === '/dashboard.js') {
         res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' });
         return res.end(await readFile(fileURLToPath(new URL('../dashboard/dashboard.js', import.meta.url))));
