@@ -1,4 +1,6 @@
+import { Buffer } from 'node:buffer';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { MAX_MESSAGE_TEXT_BYTES, type ObservationEventV1 } from '../../protocol/observation.js';
 import { snapshot } from '../../core/outbound.js';
 import { digest } from '../../language/canonical.js';
 import { instructionFile, loadInstructions } from './instruct.js';
@@ -8,6 +10,47 @@ import { observeGit } from './git-observation.js';
 type Status = { state: 'unconfigured' | 'ready' | 'observed' | 'configuration_failure' | 'certification_failure';
   instructionFile: string; sourceCount?: number; compiledDigest?: string; requestSequence?: number;
   boundary?: string; complete?: boolean; observedInjectedDigest?: string; matched?: boolean; failure?: string };
+type MessagePayload = Extract<ObservationEventV1, { kind: 'message.observed' }>['payload'];
+
+function utf8Prefix(value: string, maxBytes: number): { text: string; bytes: number } {
+  let bytes = 0;
+  let text = '';
+  for (const character of value) {
+    const characterBytes = Buffer.byteLength(character, 'utf8');
+    if (bytes + characterBytes > maxBytes) break;
+    text += character;
+    bytes += characterBytes;
+  }
+  return { text, bytes };
+}
+
+function messagePayload(message: unknown): MessagePayload | undefined {
+  if (message === null || typeof message !== 'object') return undefined;
+  const candidate = message as { role?: unknown; content?: unknown };
+  if (candidate.role !== 'user' && candidate.role !== 'assistant') return undefined;
+  const content = typeof candidate.content === 'string' ? [{ type: 'text', text: candidate.content }]
+    : Array.isArray(candidate.content) ? candidate.content : undefined;
+  if (!content) return undefined;
+  let originalBytes = 0;
+  let retainedBytes = 0;
+  const parts: string[] = [];
+  for (const block of content) {
+    if (block === null || typeof block !== 'object' || !('type' in block) || block.type !== 'text' ||
+      !('text' in block) || typeof block.text !== 'string' || block.text.length === 0) continue;
+    const text = block.text;
+    if (parts.length > 0) {
+      originalBytes++;
+      if (retainedBytes < MAX_MESSAGE_TEXT_BYTES) { parts.push('\n'); retainedBytes++; }
+    }
+    originalBytes += Buffer.byteLength(text, 'utf8');
+    const prefix = utf8Prefix(text, MAX_MESSAGE_TEXT_BYTES - retainedBytes);
+    if (prefix.text) parts.push(prefix.text);
+    retainedBytes += prefix.bytes;
+  }
+  if (retainedBytes === 0) return undefined;
+  const truncated = originalBytes > retainedBytes;
+  return { role: candidate.role, text: parts.join(''), truncated, ...(truncated ? { originalBytes } : {}) };
+}
 
 /** Pi package entrypoint: prepare once per session, before the first ordinary request. */
 export default function yokodoriPackageExtension(pi: ExtensionAPI): void {
@@ -72,6 +115,10 @@ export default function yokodoriPackageExtension(pi: ExtensionAPI): void {
         ...(status.observedInjectedDigest ? { observedDigest: status.observedInjectedDigest } : {}),
         certification: status.matched ? 'MATCH' : 'MISMATCH' } });
     // Notification only; observation never changes the provider request.
+  });
+  pi.on('message_end', event => {
+    const payload = messagePayload(event.message);
+    if (payload) bridge.emit({ kind: 'message.observed', completeness: payload.truncated ? 'partial' : 'complete', payload });
   });
   pi.on('session_shutdown', () => { bridge.emit({ kind: 'stream.closed', payload: {} }); });
   pi.registerCommand('yokodori', {
