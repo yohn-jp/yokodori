@@ -1,1 +1,484 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Yokodori · current execution</title><style>body{background:#101c20;color:#e4e7d9;font:16px system-ui;margin:0}header,main{max-width:1080px;margin:auto;padding:24px}header{border-bottom:1px solid #456;display:flex;justify-content:space-between}h1{letter-spacing:.2em;font-size:1.1rem}h2{color:#b7d8bb}section{background:#1b2c30;border:1px solid #385057;border-radius:12px;padding:20px;margin:20px 0}small{color:#9bb4b1}li{padding:10px;border-bottom:1px solid #385057}select{background:#1b2c30;color:white;padding:10px}strong{color:#e8c88d}</style><header><h1>YOKODORI</h1><small>Local execution observations</small></header><main><section><h2>Repository</h2><div id="repo">No Git observation yet</div></section><section><h2>Current execution</h2><select id="stream" aria-label="Observation stream"></select><div id="current"></div></section><section><h2>Context certification</h2><div id="context">No context evidence yet</div></section><section><h2>Timeline</h2><ol id="timeline"></ol></section><section><h2>Later signals</h2><small>Checkpoint · classification · lineage — unavailable in Wave 0</small></section></main><script src="/dashboard.js" defer></script></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Yokodori · current execution</title>
+  <!-- Design-direction seed for #30.
+       Implementation may move these styles into a CSP-compatible first-party stylesheet,
+       but should preserve this information hierarchy and visual language. -->
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a0d0f;
+      --panel: #101519;
+      --panel-strong: #151c21;
+      --line: #263038;
+      --line-strong: #34414a;
+      --text: #eef2f0;
+      --muted: #8f9ca3;
+      --soft: #c2cbc7;
+      --accent: #d8ef7a;
+      --accent-soft: rgba(216, 239, 122, .09);
+      --ok: #8ee6a7;
+      --warn: #e4c278;
+      --danger: #ef8f8f;
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { min-height: 100%; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 50% -20%, rgba(216, 239, 122, .06), transparent 32rem),
+        var(--bg);
+      color: var(--text);
+      font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    button, select { font: inherit; }
+
+    .shell { min-height: 100vh; }
+
+    .topbar {
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 0 22px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(10, 13, 15, .94);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(12px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      min-width: 220px;
+    }
+
+    .brand-mark {
+      font-weight: 800;
+      letter-spacing: .22em;
+      font-size: 15px;
+    }
+
+    .brand-subtitle {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .topbar-spacer { flex: 1; }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--soft);
+      background: var(--panel);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--ok);
+      box-shadow: 0 0 0 3px rgba(142, 230, 167, .08);
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr) 320px;
+      min-height: calc(100vh - 65px);
+    }
+
+    .rail, .inspector {
+      background: rgba(16, 21, 25, .66);
+      min-width: 0;
+    }
+
+    .rail {
+      border-right: 1px solid var(--line);
+      padding: 20px 16px;
+    }
+
+    .inspector {
+      border-left: 1px solid var(--line);
+      padding: 20px;
+    }
+
+    .main {
+      min-width: 0;
+      padding: 20px 24px 40px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      font-weight: 700;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      margin-bottom: 4px;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+
+    h2 {
+      margin-bottom: 4px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    h3 {
+      margin-bottom: 10px;
+      color: var(--soft);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .muted { color: var(--muted); }
+
+    .section + .section { margin-top: 22px; }
+
+    .stream-select {
+      width: 100%;
+      min-width: 0;
+      padding: 10px 34px 10px 11px;
+      color: var(--text);
+      background: var(--panel-strong);
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      outline: none;
+    }
+
+    .stream-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(216, 239, 122, .08);
+    }
+
+    .execution-summary {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .signal-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .signal {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--muted);
+      background: rgba(255,255,255,.01);
+    }
+
+    .signal strong {
+      color: var(--soft);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .signal span {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    .hero {
+      display: flex;
+      align-items: flex-end;
+      gap: 20px;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .hero-copy p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(180deg, rgba(21,28,33,.92), rgba(15,20,24,.92));
+      overflow: hidden;
+    }
+
+    .panel + .panel { margin-top: 16px; }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 52px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,.012);
+    }
+
+    .panel-head h2 { margin: 0; }
+
+    .panel-meta {
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .conversation {
+      min-height: 300px;
+      padding: 16px;
+    }
+
+    .conversation-empty {
+      min-height: 268px;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 12px;
+      color: var(--muted);
+      text-align: center;
+      background: rgba(255,255,255,.008);
+    }
+
+    .conversation-empty strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--soft);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .timeline {
+      margin: 0;
+      padding: 8px 16px 12px 42px;
+      list-style: decimal-leading-zero;
+    }
+
+    .timeline li {
+      position: relative;
+      padding: 11px 8px 11px 3px;
+      border-bottom: 1px solid var(--line);
+      color: var(--soft);
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+    }
+
+    .timeline li:last-child { border-bottom: 0; }
+
+    .timeline li::marker {
+      color: #66737b;
+      font-size: 11px;
+    }
+
+    .card {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255,255,255,.012);
+    }
+
+    .card + .card { margin-top: 12px; }
+
+    .card-value {
+      color: var(--soft);
+      overflow-wrap: anywhere;
+    }
+
+    .context-value {
+      color: var(--soft);
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+    }
+
+    .reserved {
+      display: grid;
+      gap: 8px;
+    }
+
+    .reserved-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .reserved-row code {
+      color: #748088;
+      font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .accent-rule {
+      height: 1px;
+      margin: 16px 0;
+      background: linear-gradient(90deg, var(--accent), transparent 70%);
+      opacity: .45;
+    }
+
+    @media (max-width: 1100px) {
+      .workspace { grid-template-columns: 220px minmax(0, 1fr); }
+      .inspector {
+        grid-column: 1 / -1;
+        border-left: 0;
+        border-top: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .inspector .section { margin: 0; }
+    }
+
+    @media (max-width: 760px) {
+      .topbar {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        padding: 14px 16px;
+      }
+      .brand { min-width: 0; width: 100%; }
+      .topbar-spacer { display: none; }
+      .workspace { display: block; }
+      .rail, .inspector {
+        border: 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .rail { padding: 16px; }
+      .main { padding: 16px; }
+      .inspector {
+        display: block;
+        border-top: 1px solid var(--line);
+        padding: 16px;
+      }
+      .inspector .section + .section { margin-top: 16px; }
+      .hero { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">YOKODORI</div>
+        <div class="brand-subtitle">execution observation</div>
+      </div>
+      <div class="topbar-spacer"></div>
+      <div class="status-chip"><span class="status-dot"></span>local daemon</div>
+      <div class="status-chip">read only</div>
+    </header>
+
+    <div class="workspace">
+      <aside class="rail" aria-label="Execution navigation">
+        <section class="section">
+          <p class="eyebrow">Execution</p>
+          <h2>Current stream</h2>
+          <select id="stream" class="stream-select" aria-label="Observation stream"></select>
+          <div id="current" class="execution-summary">Awaiting stream</div>
+        </section>
+
+        <section class="section">
+          <p class="eyebrow">Signals</p>
+          <div class="signal-list" aria-label="Future semantic signals">
+            <div class="signal"><strong>Checkpoint</strong><span>unavailable</span></div>
+            <div class="signal"><strong>Classification</strong><span>unavailable</span></div>
+            <div class="signal"><strong>Lineage</strong><span>unavailable</span></div>
+          </div>
+        </section>
+      </aside>
+
+      <main class="main">
+        <div class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow">Current execution</p>
+            <h1>What the agent is doing now</h1>
+            <p>Conversation first; execution evidence stays visible without becoming the product surface.</p>
+          </div>
+        </div>
+
+        <section class="panel" aria-labelledby="conversation-title">
+          <div class="panel-head">
+            <h2 id="conversation-title">Conversation</h2>
+            <div class="panel-meta">bounded daemon memory</div>
+          </div>
+          <div id="conversation" class="conversation">
+            <div class="conversation-empty">
+              <div>
+                <strong>No retained conversation observations yet</strong>
+                User and assistant messages will appear here when <code>message.observed</code> is available.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="timeline-title">
+          <div class="panel-head">
+            <h2 id="timeline-title">Execution timeline</h2>
+            <div class="panel-meta">canonical observation events</div>
+          </div>
+          <ol id="timeline" class="timeline"></ol>
+        </section>
+      </main>
+
+      <aside class="inspector" aria-label="Execution inspector">
+        <section class="section">
+          <p class="eyebrow">Repository</p>
+          <div class="card">
+            <div id="repo" class="card-value">No Git observation yet</div>
+          </div>
+        </section>
+
+        <section class="section">
+          <p class="eyebrow">Context certification</p>
+          <div class="card">
+            <div id="context" class="context-value">Not compiled · not injected · not observed</div>
+          </div>
+        </section>
+
+        <section class="section">
+          <p class="eyebrow">Observation model</p>
+          <div class="card">
+            <div class="reserved">
+              <div class="reserved-row"><span>Git</span><code>observed fact</code></div>
+              <div class="reserved-row"><span>Context</span><code>certified evidence</code></div>
+              <div class="reserved-row"><span>Conversation</span><code>bounded memory</code></div>
+            </div>
+            <div class="accent-rule"></div>
+            <div class="muted">Checkpoint, classification, and lineage remain reserved until real producers exist.</div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <script src="/dashboard.js" defer></script>
+</body>
+</html>
