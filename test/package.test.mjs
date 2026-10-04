@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile, symlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -17,7 +17,8 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import { snapshot } from '../dist/core/outbound.js';
-import { createYokodori } from '../dist/sdk/index.js';
+import { digest } from '../dist/language/canonical.js';
+import { loadInstructions } from '../dist/adapters/pi/instruct.js';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const fidelity = { boundary: 'pi.context_with_system', providerEffective: false };
@@ -49,7 +50,7 @@ function runAsync(command, args, options = {}) {
   });
 }
 
-async function capturedProviderContext({ cwd, agentDir, withPackage, admitted }) {
+async function capturedProviderContext({ cwd, agentDir, withPackage, expectedState, afterStart, onProof, tamper }) {
   const received = [];
   const settingsManager = withPackage
     ? SettingsManager.create(cwd, agentDir)
@@ -65,7 +66,8 @@ async function capturedProviderContext({ cwd, agentDir, withPackage, admitted })
     const extension = loaded.extensions.find(({ path }) => path.endsWith('package-extension.js'));
     assert.ok(extension, 'Pi did not discover the packed manifest entrypoint');
     assert.ok(extension.commands.has('yokodori'), 'Pi did not load the admission command');
-    assert.equal(extension.handlers.has('before_agent_start'), false, 'unconfigured package must not inject');
+    assert.ok(extension.handlers.has('before_agent_start'));
+    assert.ok(extension.handlers.has('context_with_system'));
     assert.deepEqual(loaded.errors, []);
     assert.equal((loaded.warnings ?? []).some(({ warning }) => warning.includes('duplicate runtime modules')), false);
   }
@@ -95,24 +97,28 @@ async function capturedProviderContext({ cwd, agentDir, withPackage, admitted })
   });
   await session.bindExtensions({});
   try {
-    if (admitted) {
-      await session.prompt(`/yokodori ${JSON.stringify(admitted)}`);
+    if (afterStart) await afterStart();
+    await session.prompt('Package first ordinary request');
+    if (withPackage) {
       const extension = resourceLoader.getExtensions().extensions.find(({ path }) => path.endsWith('package-extension.js'));
-      assert.ok(extension.handlers.has('before_agent_start'), 'admission must register injection');
-      assert.ok(extension.handlers.has('context_with_system'), 'admission must register observation');
-    }
-    await session.prompt('Package passivity fixture');
-    if (admitted) {
-      const extension = resourceLoader.getExtensions().extensions.find(({ path }) => path.endsWith('package-extension.js'));
+      if (tamper) {
+        const section = received[0].messages[0].sections.yokodori_initial_context;
+        await extension.handlers.get('context_with_system')[0]({ messages: [{ role: 'system', content: '',
+          sections: { yokodori_initial_context: section.replace('Source: file:AGENTS.md', 'Source: file:tampered.md') } }] });
+      }
       const notices = [];
       await extension.commands.get('yokodori').handler('', { ui: { notify: text => notices.push(JSON.parse(text)) } });
       const proof = notices[0];
-      assert.equal(proof.boundary, 'pi.context_with_system');
-      assert.equal(proof.requestSequence, 1);
-      assert.equal(proof.complete, true, JSON.stringify(proof));
-      assert.equal(proof.represented, true, JSON.stringify(proof));
-      assert.equal(proof.compiledDigest, createYokodori().compile(admitted).digest);
-      assert.match(proof.snapshotDigest, /^[a-f0-9]{64}$/);
+      assert.equal(proof.state, expectedState, JSON.stringify(proof));
+      if (expectedState === 'observed') {
+        assert.equal(proof.boundary, 'pi.context_with_system');
+        assert.equal(proof.requestSequence, 1);
+        assert.equal(proof.complete, true);
+        assert.equal(proof.matched, true);
+        assert.equal(proof.compiledDigest, proof.observedInjectedDigest);
+      }
+      assert.equal(JSON.stringify(proof).includes('secret declared text'), false);
+      onProof?.(proof);
     }
   } finally {
     session.dispose();
@@ -121,7 +127,7 @@ async function capturedProviderContext({ cwd, agentDir, withPackage, admitted })
   return snapshot(received[0].messages, 0, fidelity).messages;
 }
 
-test('packed npm artifact: Pi install, command admission, append injection and observed certification', async t => {
+test('packed npm artifact: manifest admission before first request and observed section identity', async t => {
   const temporary = await mkdtemp(join(tmpdir(), 'yokodori-package-'));
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const packOutput = execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', temporary], {
@@ -206,12 +212,66 @@ test('packed npm artifact: Pi install, command admission, append injection and o
   assert.equal(existsSync(join(installedPackage, 'node_modules/@earendil-works/pi-coding-agent')), false);
 
   const baseline = await capturedProviderContext({ cwd: project, agentDir: join(temporary, 'baseline-agent'), withPackage: false });
-  const packaged = await capturedProviderContext({ cwd: project, agentDir: packageRoot, withPackage: true });
+  const packaged = await capturedProviderContext({ cwd: project, agentDir: packageRoot, withPackage: true, expectedState: 'unconfigured' });
   assert.deepEqual(packaged, baseline, 'unconfigured extension must preserve provider-bound context');
-  const admitted = { task: { id: 'fixture-task', kind: 'task', content: 'admitted package fixture' } };
-  const injected = await capturedProviderContext({ cwd: project, agentDir: packageRoot, withPackage: true, admitted });
-  const compiled = createYokodori().compile(admitted);
-  assert.ok(injected.some(message => message.role === 'system' && message.payload.sections?.yokodori_initial_context?.includes(compiled.text)), 'observed system section must contain exact compiled payload');
+  const manifestDir = join(project, '.yokodori');
+  await mkdir(manifestDir);
+  await writeFile(join(project, 'AGENTS.md'), 'secret declared text');
+  await writeFile(join(project, 'ignored.txt'), 'second declared text');
+  await writeFile(join(project, 'undeclared.txt'), 'not admitted');
+  await writeFile(join(manifestDir, 'instruct.json'), JSON.stringify({ version: 1, context: [
+    { path: 'AGENTS.md', kind: 'instructions', rank: 200 },
+    { path: 'ignored.txt', kind: 'repository', rank: 100 },
+  ] }));
+  let certified;
+  const injected = await capturedProviderContext({ cwd: project, agentDir: packageRoot, withPackage: true, expectedState: 'observed',
+    onProof: proof => { certified = proof; },
+    afterStart: async () => writeFile(join(project, 'AGENTS.md'), 'changed after session start') });
+  const section = injected.find(message => message.role === 'system').payload.sections.yokodori_initial_context;
+  assert.ok(section.includes('secret declared text'));
+  assert.equal(section.includes('changed after session start'), false);
+  assert.ok(section.indexOf('second declared text') < section.indexOf('secret declared text'), 'rank must govern ordering');
+  assert.equal(section.includes('not admitted'), false);
+  const body = section.slice('<yokodori_initial_context>\n'.length, -'\n</yokodori_initial_context>'.length);
+  assert.equal(digest(body), certified.observedInjectedDigest);
+  assert.equal(certified.observedInjectedDigest, certified.compiledDigest);
+
+  let mismatch;
+  await capturedProviderContext({ cwd: project, agentDir: packageRoot, withPackage: true,
+    expectedState: 'certification_failure', tamper: true, onProof: proof => { mismatch = proof; } });
+  assert.equal(mismatch.matched, false);
+  assert.notEqual(mismatch.observedInjectedDigest, mismatch.compiledDigest);
+
+  const entries = [
+    { path: 'AGENTS.md', kind: 'instructions', rank: 200 },
+    { path: 'ignored.txt', kind: 'repository', rank: 100 },
+  ];
+  const initial = await loadInstructions(project);
+  await writeFile(join(manifestDir, 'instruct.json'), JSON.stringify({ version: 1, context: [...entries].reverse() }));
+  assert.equal((await loadInstructions(project)).compiled.digest, initial.compiled.digest);
+  for (const context of [
+    [{ ...entries[0], rank: 100 }, entries[1]],
+    [entries[0], { ...entries[1], path: './AGENTS.md' }],
+    [{ ...entries[0], path: 'missing.txt' }],
+    [{ ...entries[0], path: '/etc/passwd' }],
+    [{ ...entries[0], path: '../escape.txt' }],
+    [{ ...entries[0], path: 'C:\\Windows\\system.ini' }],
+    [{ ...entries[0], path: '\\\\server\\share' }],
+    [{ ...entries[0], kind: 'unsupported' }],
+  ]) {
+    await writeFile(join(manifestDir, 'instruct.json'), JSON.stringify({ version: 1, context }));
+    await assert.rejects(loadInstructions(project));
+    await capturedProviderContext({ cwd: project, agentDir: packageRoot, withPackage: true, expectedState: 'configuration_failure' });
+  }
+  await symlink(join(temporary, 'outside.txt'), join(project, 'escape.txt'));
+  await writeFile(join(temporary, 'outside.txt'), 'outside');
+  await writeFile(join(manifestDir, 'instruct.json'), JSON.stringify({ version: 1, context: [{ ...entries[0], path: 'escape.txt' }] }));
+  await assert.rejects(loadInstructions(project));
+  await writeFile(join(project, 'binary.txt'), Buffer.from([0xff, 0xfe]));
+  await writeFile(join(manifestDir, 'instruct.json'), JSON.stringify({ version: 1, context: [{ ...entries[0], path: 'binary.txt' }] }));
+  await assert.rejects(loadInstructions(project));
+  await writeFile(join(manifestDir, 'instruct.json'), '{invalid json');
+  await capturedProviderContext({ cwd: project, agentDir: packageRoot, withPackage: true, expectedState: 'configuration_failure' });
 
   const cliLoad = run(process.execPath, [piCli, '--help'], { cwd: project, env: agentEnvironment });
   assert.equal(cliLoad.includes('Failed to load extension'), false, 'Pi CLI must load the installed package without errors');
