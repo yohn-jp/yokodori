@@ -931,3 +931,61 @@ Yokodori is the bridge between those durable facts and the probabilistic reasoni
 Its defining responsibility is therefore:
 
 > **Own the model-visible context without owning the truths from which that context is compiled.**
+
+## 26. Resident observability plane
+
+Epic #24 proposes the next architectural layer after the certified Pi context boundary: an independent local Yokodori daemon with a first-party read-only dashboard.
+
+The daemon extends Yokodori from an in-process context capability into a harness-agnostic semantic observation runtime without changing the existing authority model.
+
+The intended composition is:
+
+```text
+Pi adapter / future harness adapters
+             |
+             | canonical observation events
+             v
+      Yokodori daemon
+        observation projection
+        checkpoint correlation
+        Git evidence correlation
+        execution lineage
+        async semantic classification
+             |
+             +--> Hachidori
+             |
+             v
+        HTML dashboard
+```
+
+The daemon does not own or supervise agent execution. Pi/harness execution continues if the daemon is unavailable. Context injection remains at the supported adapter boundary rather than moving into the daemon.
+
+A Yokodori observation stream is not automatically an AgentRun. When Tsukai identity is available, it is carried as an external authority reference.
+
+The daemon must preserve the provenance and trust class of observations:
+
+- Git/runtime observations are externally sourced facts;
+- digest equality and completeness are Yokodori certification results;
+- checkpoints are explicit agent/user declarations;
+- Hachidori labels are probabilistic inference with classifier/version/confidence.
+
+These classes must not be flattened into one apparent certainty level.
+
+Checkpoint commits are expected to provide sparse, high-confidence semantic anchors. Message-level Hachidori classifications fill the execution trail between checkpoints. A later fork is represented as lineage between observation streams; Yokodori need not own the mechanism that created it.
+
+The first dashboard is read-only and execution-centered. Its primary information hierarchy is:
+
+1. repository / branch / HEAD;
+2. current stream and latest checkpoint;
+3. event/message trail since that checkpoint;
+4. semantic classifications;
+5. context injection/observation/certification;
+6. parent/child lineage.
+
+Daemon health, protocol version, socket paths, and full digest values are secondary diagnostics rather than the primary visual hierarchy.
+
+Raw model-visible context remains sensitive and is not persisted or exposed by default. Initial daemon state should be bounded and in-memory. Durable semantic history requires an explicit later persistence/privacy contract.
+
+Adapter-to-daemon communication uses loopback HTTP in the first daemon architecture. The HTTP API is transport; the versioned canonical observation event is the durable protocol, so its semantic schema remains independent from HTTP request mechanics. The same loopback service serves read APIs, SSE live updates, and the HTML dashboard. Pi-native hooks and message types remain confined to the Pi adapter. Remote bind is outside the initial authority and requires a future authentication/transport-security design.
+
+The detailed proposed architecture and Wave sequencing are defined in `docs/epics/0002-daemon-dashboard-observability-plane.md`. Wave 0 is tracked by #25.
