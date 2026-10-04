@@ -19,7 +19,15 @@ jobs:
       node-version: "24"
       format-script: ""
       lint-script: ""
-      canonical-release-preflight: true
+    permissions:
+      actions: read
+      contents: read
+
+  release-preflight:
+    uses: yohn-jp/.github/.github/workflows/npm-publish.yml@main
+    with:
+      certification-verification-script: scripts/verify-release-certification.mjs
+      dry-run: true
     permissions:
       actions: read
       contents: read
