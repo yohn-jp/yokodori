@@ -520,13 +520,20 @@ If initial context cannot be compiled deterministically:
 
 ### 18.2 Observer failure
 
+The supported Pi `context_with_system` runner catches extension-handler errors and continues the request. Its return contract permits transcript replacement but does not grant cancellation authority.
+
+Therefore Yokodori must not claim fail-closed provider execution through this hook.
+
 In passive mode, an outbound observer failure:
 
 - must not rewrite the transcript;
-- must be surfaced to the host according to configured observer failure policy;
+- must be surfaced through Yokodori observation/certification state;
+- must allow Pi to continue according to Pi's own execution semantics;
 - defaults to fail-open for model execution and fail-visible for diagnostics.
 
-A strict certification mode may choose fail-closed.
+Strict certification means **fail the certification result**, not **cancel the provider request**. A run/request with an observer failure is not certifiable as completely observed even though Pi may continue executing it.
+
+If future Pi APIs expose an authoritative pre-provider cancellation contract, fail-closed execution may be designed as a separate capability. Yokodori must not emulate cancellation by transcript mutation, synthetic errors, provider monkey-patching, or Pi Core modification.
 
 ### 18.3 Pi adapter incompatibility
 
