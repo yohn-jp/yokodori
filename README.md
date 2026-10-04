@@ -2,6 +2,12 @@
 
 Deterministic initial context and passive Pi context-boundary observation. Node.js 22+; TypeScript SDK, no CLI.
 
+npm: https://www.npmjs.com/package/yokodori
+
+```bash
+npm install yokodori@0.1.0
+```
+
 ```ts
 import { createYokodori } from 'yokodori';
 import { createPiExtension } from 'yokodori/pi';
