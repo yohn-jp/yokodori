@@ -3,18 +3,58 @@
   "version": "0.1.0",
   "private": false,
   "type": "module",
-  "engines": { "node": ">=22" },
-  "exports": {
-    ".": { "types": "./dist/sdk/index.d.ts", "import": "./dist/sdk/index.js" },
-    "./pi": { "types": "./dist/adapters/pi/index.d.ts", "import": "./dist/adapters/pi/index.js" }
+  "engines": {
+    "node": ">=22"
   },
-  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/sdk/index.d.ts",
+      "import": "./dist/sdk/index.js"
+    },
+    "./pi": {
+      "types": "./dist/adapters/pi/index.d.ts",
+      "import": "./dist/adapters/pi/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.mjs",
     "verify": "npm run build && npm run boundaries && npm test",
-    "boundaries": "node scripts/boundaries.mjs"
+    "boundaries": "node scripts/boundaries.mjs",
+    "prepack": "npm run build"
   },
-  "dependencies": { "@earendil-works/pi-coding-agent": "1.0.2" },
-  "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.9.0" }
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  },
+  "description": "Deterministic model-visible context compilation and passive Pi context-boundary observation.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yohn-jp/yokodori.git"
+  },
+  "homepage": "https://github.com/yohn-jp/yokodori#readme",
+  "bugs": {
+    "url": "https://github.com/yohn-jp/yokodori/issues"
+  },
+  "keywords": [
+    "ai-agents",
+    "context",
+    "deterministic",
+    "llm",
+    "pi",
+    "sdk"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
 }
