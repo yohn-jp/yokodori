@@ -6,14 +6,14 @@ Scope: first executable Yokodori vertical slice
 
 ## 1. Objective
 
-The first Yokodori implementation establishes deterministic ownership of initial model context and observation of the exact Pi transcript immediately before provider dispatch.
+The first Yokodori implementation establishes deterministic ownership of initial model context and observation of the complete transcript exposed by Pi at its supported final context extension boundary. This boundary is upstream of some Pi-owned request projections and must not be described as the exact provider-effective transcript.
 
 This Epic is intentionally narrow.
 
 It must prove two properties:
 
 1. the same admitted semantic inputs compile to the same initial context bytes and digest;
-2. every Pi model request can be observed at the final extension boundary before provider-specific conversion without modifying Pi Core.
+2. every Pi model request can be observed at Pi's supported `context_with_system` extension boundary without modifying Pi Core, with explicit fidelity metadata when Pi performs later unobservable request projection.
 
 No semantic compression, metacognitive inference, Hachidori/Clef integration, or fork orchestration is required for this Epic.
 
@@ -121,7 +121,11 @@ At this point Pi has already:
 - restored the current system prompt;
 - restored tool declaration state.
 
-The event therefore exposes the complete transcript intended for the next model request before provider-specific conversion.
+The event exposes the complete transcript available at this supported extension boundary.
+
+It is **not** universally identical to the final provider-effective transcript. In particular, current Pi applies its forced-system-prompt projection after `context_with_system`. In `replace` mode the event can therefore expose Pi's underlying structured system sections while the provider later receives the replacement prompt returned from `before_agent_start`.
+
+Yokodori must report this boundary honestly rather than reconstructing or intercepting Pi internals.
 
 The first Epic uses this hook passively:
 
@@ -400,6 +404,12 @@ export interface OutboundContextSnapshot {
   readonly messages: readonly OutboundMessage[];
   readonly digest: string;
 
+  readonly fidelity: {
+    readonly boundary: "pi.context_with_system";
+    readonly providerEffective: boolean;
+    readonly knownPostBoundaryProjection?: "forced-system-prompt";
+  };
+
   readonly stats: {
     readonly messageCount: number;
     readonly byteCount: number;
@@ -416,7 +426,14 @@ export interface OutboundContextSnapshot {
 
 The snapshot digest is derived from canonical serialization of the transcript payload, not from timestamp or sequence number.
 
-The snapshot is a Yokodori observation of Pi's outbound transcript. It is not a replacement authority for Pi session persistence.
+The snapshot is a Yokodori observation of Pi's transcript at the declared Pi extension boundary. It is not a replacement authority for Pi session persistence and, when `fidelity.providerEffective` is false, must not be represented as the exact provider-effective transcript.
+
+For the current Pi contract:
+
+- `control` and `append` may be certified against provider-visible output when tests demonstrate equivalence;
+- `replace` snapshots declare `providerEffective: false` and `knownPostBoundaryProjection: "forced-system-prompt"` because Pi applies that projection after the supported observation hook.
+
+The digest identifies the captured boundary transcript, not an inferred downstream transcript.
 
 ## 14. Transcript normalization
 
@@ -564,7 +581,9 @@ Pi without Yokodori passive observer
 Pi with Yokodori passive observer
 ```
 
-at the provider-facing normalized transcript boundary, except for intentionally injected initial context in experiments that enable injection.
+for the control/passive-observation case where the supported hook is proven equivalent to provider-visible normalized content.
+
+This invariant does not claim provider-effective snapshot fidelity for `replace` mode. Replace mode must instead prove that Pi sends the compiled replacement prompt through its supported behavior while the Yokodori snapshot explicitly records the known post-boundary projection.
 
 This separates the two experiments:
 
@@ -657,7 +676,9 @@ The Epic is not complete without tests proving the contracts.
 
 - inline extension loads through supported Pi SDK/resource-loader mechanisms;
 - `before_agent_start` receives and injects compiled context;
-- `context_with_system` capture includes current system state;
+- `context_with_system` capture includes the complete state exposed at that boundary;
+- snapshot fidelity identifies the observation boundary and whether provider-effective equivalence is established;
+- replace mode explicitly records Pi's known post-boundary forced-system-prompt projection;
 - passive observation returns no transcript mutation;
 - request sequence is monotonic per attached adapter/session boundary;
 - observer failure semantics are tested.
@@ -666,9 +687,11 @@ The Epic is not complete without tests proving the contracts.
 
 Using a deterministic/fake provider where practical:
 
-- provider-visible transcript with passive capture equals provider-visible transcript without passive capture;
-- Append mode contains the exact compiled context bytes;
-- the snapshot digest corresponds to the observed transcript;
+- provider-visible transcript with passive capture equals provider-visible transcript without passive capture in control mode;
+- Append mode contains the exact compiled context bytes and is compared against provider-visible behavior;
+- Replace mode proves the provider receives the compiled replacement prompt but does not claim that the `context_with_system` snapshot is provider-effective;
+- Replace snapshots expose explicit post-boundary-projection fidelity metadata;
+- the snapshot digest corresponds to the transcript actually observed at the declared boundary;
 - multiple model calls each produce exactly one outbound snapshot.
 
 A live provider test is useful for dogfood but must not be the only correctness proof.
