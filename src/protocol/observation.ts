@@ -8,15 +8,19 @@ export type ObservationEventV1 = {
   | { readonly kind: 'context.compiled'; readonly payload: { readonly digest: string; readonly sourceCount: number; readonly rendererVersion: string } }
   | { readonly kind: 'context.injected'; readonly payload: { readonly state: 'injected'; readonly boundary: string } }
   | { readonly kind: 'context.observed'; readonly payload: { readonly requestSequence: number; readonly boundary: string; readonly complete: boolean; readonly observedDigest?: string; readonly certification: 'MATCH' | 'MISMATCH' } }
+  | { readonly kind: 'message.observed'; readonly payload: { readonly role: 'user' | 'assistant'; readonly text: string; readonly truncated: boolean; readonly originalBytes?: number } }
   | { readonly kind: 'git.observed'; readonly payload: { readonly root: string; readonly branch?: string; readonly head?: string; readonly dirty: 'dirty' | 'clean' | 'unknown' } }
 );
+
+export const MAX_MESSAGE_TEXT_BYTES = 8 * 1024;
 
 const record = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const keys = (v: Record<string, unknown>, required: string[], optional: string[] = []) =>
   required.every(k => Object.hasOwn(v, k)) && Object.keys(v).every(k => required.includes(k) || optional.includes(k));
 const str = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 512 && !/[\x00-\x1f\x7f]/.test(v);
 const digest = (v: unknown) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
-const nat = (v: unknown) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+const nat = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+const textBytes = (v: string) => new TextEncoder().encode(v).byteLength;
 export function parseObservationEvent(v: unknown): ObservationEventV1 {
   if (!record(v) || v.version !== 1) throw new Error('UNSUPPORTED_VERSION');
   if (!keys(v, ['version', 'eventId', 'streamId', 'sequence', 'observedAt', 'source', 'kind', 'payload'], ['completeness']) ||
@@ -33,6 +37,15 @@ export function parseObservationEvent(v: unknown): ObservationEventV1 {
     case 'context.compiled': valid = keys(p, ['digest', 'sourceCount', 'rendererVersion']) && digest(p.digest) && nat(p.sourceCount) && str(p.rendererVersion); break;
     case 'context.injected': valid = keys(p, ['state', 'boundary']) && p.state === 'injected' && str(p.boundary); break;
     case 'context.observed': valid = keys(p, ['requestSequence', 'boundary', 'complete', 'certification'], ['observedDigest']) && nat(p.requestSequence) && (typeof p.requestSequence === 'number' && p.requestSequence > 0) && str(p.boundary) && typeof p.complete === 'boolean' && (p.observedDigest === undefined || digest(p.observedDigest)) && (p.certification === 'MATCH' || p.certification === 'MISMATCH'); break;
+    case 'message.observed': {
+      const bytes = typeof p.text === 'string' ? textBytes(p.text) : Infinity;
+      valid = keys(p, ['role', 'text', 'truncated'], ['originalBytes']) &&
+        (p.role === 'user' || p.role === 'assistant') && typeof p.text === 'string' && bytes <= MAX_MESSAGE_TEXT_BYTES &&
+        typeof p.truncated === 'boolean' &&
+        (p.originalBytes === undefined || (nat(p.originalBytes) &&
+          (p.truncated ? p.originalBytes > bytes : p.originalBytes === bytes)));
+      break;
+    }
     case 'git.observed': valid = keys(p, ['root', 'dirty'], ['branch', 'head']) && str(p.root) && (p.branch === undefined || str(p.branch)) && (p.head === undefined || (typeof p.head === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(p.head))) && ['dirty', 'clean', 'unknown'].includes(String(p.dirty)); break;
   }
   if (!valid) throw new Error('INVALID_PAYLOAD');

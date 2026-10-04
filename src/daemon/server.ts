@@ -6,11 +6,42 @@ import { parseObservationEvent, type ObservationEventV1 } from '../protocol/obse
 // Oldest streams and events are evicted first. Evicted event IDs cannot be retried idempotently.
 export const MAX_STREAMS = 32;
 export const MAX_EVENTS = 64;
-type Stream = { streamId: string; sequence: number; closed: boolean; events: ObservationEventV1[]; latest: Partial<Record<ObservationEventV1['kind'], ObservationEventV1>> };
+export const MAX_STREAM_MESSAGES = 64;
+export const MAX_STREAM_MESSAGE_BYTES = 128 * 1024;
+const MAX_REQUEST_BODY_BYTES = 64 * 1024;
+type MessageEvent = Extract<ObservationEventV1, { kind: 'message.observed' }>;
+type Stream = {
+  streamId: string; sequence: number; closed: boolean; events: ObservationEventV1[];
+  latest: Partial<Record<ObservationEventV1['kind'], ObservationEventV1>>;
+  messages: MessageEvent[]; retainedMessageBytes: number; evictedMessageCount: number;
+  evictedMessageBytes: number; truncatedMessageCount: number;
+};
+const textBytes = (text: string) => Buffer.byteLength(text, 'utf8');
+const observedMessageBytes = (event: MessageEvent) => event.payload.originalBytes ?? textBytes(event.payload.text);
+
+function projectMessageHistory(stream: Stream) {
+  return {
+    retainedCount: stream.messages.length,
+    retainedBytes: stream.retainedMessageBytes,
+    evictedCount: stream.evictedMessageCount,
+    evictedBytes: stream.evictedMessageBytes,
+    truncatedCount: stream.truncatedMessageCount,
+    incomplete: stream.evictedMessageCount > 0 || stream.truncatedMessageCount > 0,
+  };
+}
+
+function projectStream(stream: Stream) {
+  const { messages, retainedMessageBytes, evictedMessageCount, evictedMessageBytes, truncatedMessageCount, ...base } = stream;
+  return {
+    ...base,
+    messages: messages.map(event => ({ sequence: event.sequence, observedAt: event.observedAt, ...event.payload })),
+    messageHistory: projectMessageHistory(stream),
+  };
+}
 export function createDaemon() {
   const streams = new Map<string, Stream>();
   const clients = new Set<ServerResponse>();
-  const snapshot = () => ({ streams: [...streams.values()] });
+  const snapshot = () => ({ streams: [...streams.values()].map(projectStream) });
   const send = (res: ServerResponse, code: number, value: unknown) => {
     res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(value));
   };
@@ -18,7 +49,7 @@ export function createDaemon() {
   const body = async (req: IncomingMessage): Promise<unknown> => {
     if (req.headers['content-type']?.split(';')[0] !== 'application/json') throw new Error('INVALID_CONTENT_TYPE');
     let data = '';
-    for await (const chunk of req) { data += String(chunk); if (Buffer.byteLength(data) > 16_384) throw new Error('BODY_TOO_LARGE'); }
+    for await (const chunk of req) { data += String(chunk); if (Buffer.byteLength(data) > MAX_REQUEST_BODY_BYTES) throw new Error('BODY_TOO_LARGE'); }
     return JSON.parse(data) as unknown;
   };
   const server = createServer(async (req, res) => {
@@ -40,18 +71,22 @@ export function createDaemon() {
         res.write(': connected\n\n'); clients.add(res); res.on('close', () => clients.delete(res)); return;
       }
       if (req.method === 'GET' && path === '/api/v1/snapshot') return send(res, 200, snapshot());
-      if (req.method === 'GET' && path === '/api/v1/streams') return send(res, 200, [...streams.values()].map(({ streamId, sequence, closed, latest }) => ({ streamId, sequence, closed, latest })));
+      if (req.method === 'GET' && path === '/api/v1/streams') return send(res, 200, [...streams.values()].map(stream => ({
+        streamId: stream.streamId, sequence: stream.sequence, closed: stream.closed, latest: stream.latest,
+        messageHistory: projectMessageHistory(stream),
+      })));
       if (req.method === 'GET' && path === '/api/v1/events') return send(res, 200, [...streams.values()].flatMap(s => s.events));
       const match = /^\/api\/v1\/streams\/([^/]+)(\/events)?$/.exec(path);
       if (req.method === 'GET' && match && !match[2]) {
-        const stream = streams.get(decodeURIComponent(match[1]!)); return stream ? send(res, 200, stream) : error(res, 404, 'STREAM_NOT_FOUND');
+        const stream = streams.get(decodeURIComponent(match[1]!)); return stream ? send(res, 200, projectStream(stream)) : error(res, 404, 'STREAM_NOT_FOUND');
       }
       if (req.method === 'POST' && path === '/api/v1/streams') {
         const v = await body(req);
         if (!v || typeof v !== 'object' || Array.isArray(v) || Object.keys(v).length !== 1 || !('streamId' in v) || typeof v.streamId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(v.streamId)) return error(res, 400, 'INVALID_STREAM');
         if (streams.has(v.streamId)) return send(res, 200, { streamId: v.streamId });
         if (streams.size >= MAX_STREAMS) streams.delete(streams.keys().next().value!);
-        streams.set(v.streamId, { streamId: v.streamId, sequence: 0, closed: false, events: [], latest: {} });
+        streams.set(v.streamId, { streamId: v.streamId, sequence: 0, closed: false, events: [], latest: {},
+          messages: [], retainedMessageBytes: 0, evictedMessageCount: 0, evictedMessageBytes: 0, truncatedMessageCount: 0 });
         return send(res, 201, { streamId: v.streamId });
       }
       if (req.method === 'POST' && match?.[2]) {
@@ -69,6 +104,20 @@ export function createDaemon() {
         stream.sequence = event.sequence; stream.closed = event.kind === 'stream.closed';
         stream.events.push(event); if (stream.events.length > MAX_EVENTS) stream.events.shift();
         stream.latest[event.kind] = event as never;
+        if (event.kind === 'message.observed') {
+          stream.messages.push(event);
+          stream.retainedMessageBytes += textBytes(event.payload.text);
+          if (event.payload.truncated) stream.truncatedMessageCount++;
+          while (stream.messages.length > MAX_STREAM_MESSAGES || stream.retainedMessageBytes > MAX_STREAM_MESSAGE_BYTES) {
+            const evicted = stream.messages.shift()!;
+            const bytes = textBytes(evicted.payload.text);
+            stream.retainedMessageBytes -= bytes;
+            stream.evictedMessageCount++;
+            stream.evictedMessageBytes = Math.min(Number.MAX_SAFE_INTEGER, stream.evictedMessageBytes + observedMessageBytes(evicted));
+            const retainedEventIndex = stream.events.indexOf(evicted);
+            if (retainedEventIndex !== -1) stream.events.splice(retainedEventIndex, 1);
+          }
+        }
         for (const client of clients) if (!client.write('event: update\ndata: {}\n\n')) { client.end(); clients.delete(client); }
         return send(res, 201, { accepted: true, duplicate: false });
       }
