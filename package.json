@@ -16,6 +16,7 @@
       "import": "./dist/adapters/pi/index.js"
     }
   },
+  "bin": { "yokodori": "./dist/daemon/cli.js" },
   "files": [
     "dist",
     "README.md",
@@ -27,7 +28,7 @@
     ]
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && cp -R src/dashboard dist/dashboard",
     "test": "npm run build && node --test test/*.test.mjs",
     "verify": "npm run build && npm run boundaries && npm test",
     "boundaries": "node scripts/boundaries.mjs",
