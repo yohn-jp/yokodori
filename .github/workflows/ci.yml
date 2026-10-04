@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: yohn-jp/.github/.github/workflows/typescript-cli-ci.yml@main
+    with:
+      node-version: "24"
+      format-script: ""
+      lint-script: ""
+      canonical-release-preflight: true
+    permissions:
+      actions: read
+      contents: read
