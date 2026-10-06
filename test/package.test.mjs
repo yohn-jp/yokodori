@@ -50,7 +50,7 @@ function runAsync(command, args, options = {}) {
   });
 }
 
-async function capturedProviderContext({ cwd, agentDir, withPackage, expectedState, afterStart, onProof, tamper }) {
+async function capturedProviderContext({ cwd, agentDir, withPackage, expectedState, afterStart, onProof, tamper, partial }) {
   const received = [];
   const settingsManager = withPackage
     ? SettingsManager.create(cwd, agentDir)
