@@ -383,7 +383,7 @@ function renderClassificationState(pane, result) {
   const block = document.createElement('div');
   const status = result ? result.status : 'unavailable';
   block.className = 'classification-state-block ' + status;
-  text(block, 'strong', '', result ? result.status : 'No classification');
+  text(block, 'strong', '', result ? result.status : 'No classification observation');
   const reason = result && result.failure ? result.failure : (result ? 'No inferred choices are available for this message.' : 'No Hachidori annotation has been observed for this message.');
   text(block, 'p', '', reason);
   pane.append(block);
