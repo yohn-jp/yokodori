@@ -18,7 +18,8 @@ import {
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import { snapshot } from '../dist/core/outbound.js';
 import { digest } from '../dist/language/canonical.js';
-import { loadInstructions } from '../dist/adapters/pi/instruct.js';\nimport { createDaemon } from '../dist/daemon/server.js';
+import { loadInstructions } from '../dist/adapters/pi/instruct.js';
+import { createDaemon } from '../dist/daemon/server.js';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const fidelity = { boundary: 'pi.context_with_system', providerEffective: false };
@@ -67,7 +68,8 @@ async function capturedProviderContext({ cwd, agentDir, withPackage, expectedSta
     assert.ok(extension, 'Pi did not discover the packed manifest entrypoint');
     assert.ok(extension.commands.has('yokodori'), 'Pi did not load the admission command');
     assert.ok(extension.handlers.has('before_agent_start'));
-    assert.ok(extension.handlers.has('context_with_system'));\n    assert.ok(extension.handlers.has('message_end'));
+    assert.ok(extension.handlers.has('context_with_system'));
+    assert.ok(extension.handlers.has('message_end'));
     assert.deepEqual(loaded.errors, []);
     assert.equal((loaded.warnings ?? []).some(({ warning }) => warning.includes('duplicate runtime modules')), false);
   }
