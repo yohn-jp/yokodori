@@ -12,7 +12,7 @@ class Element {
   addEventListener(type, fn) { this.listeners.set(type, fn); }
   setAttribute(name, value) { this[name] = value; }
 }
-const ids = ['streams','current','repo','context','retention','timeline','conversation','message-inspector','execution-title','execution-meta'];
+const ids = ['streams','current','repo','context','retention','timeline','conversation','message-inspector','execution-title','execution-meta','execution-status','execution-search','count-all','count-running','count-finished','filter-all','filter-running','filter-finished','tab-conversation','tab-timeline','tab-git','view-conversation','view-timeline','view-git','execution-evidence'];
 const axes = [
   { id: 'activity', choice: 'implement', confidence: .34, probabilities: { implement: .34, test: .33, other: .33 } },
   { id: 'intent', choice: 'instruction', confidence: 1, probabilities: { instruction: 1, other: 0 } },
@@ -47,17 +47,17 @@ test('message collection, complete low-confidence chips and modeless per-axis in
   const h = await harness({ streams: [a, stream('b', [])] }); const { elements } = h;
   assert.equal(elements.streams.children[0]['aria-current'], 'true');
   assert.match(elements.conversation.textContent, /activity: implement/);
-  const lowChip = buttons(elements)[0].children.at(-1).children[0];
+  const lowChip = buttons(elements)[0].children[0].children.at(-1).children[0];
   assert.match(lowChip.className, /low-emphasis/);
   assert.match(lowChip.title, /34%/);
   assert.match(elements.conversation.textContent, /execution_state: implementation/);
   assert.match(elements.conversation.textContent, /Classification pending/);
   assert.match(elements.conversation.textContent, /Truncated/);
-  assert.match(elements.retention.textContent, /incomplete history/);
-  assert.match(elements.repo.textContent, /\/repo · main/);
-  assert.match(elements.context.textContent, /MATCH · complete/);
+  assert.match(elements.retention.textContent, /IncompleteHistory/);
+  assert.match(elements.repo.textContent, /Root\/repoBranchmain/);
+  assert.match(elements.context.textContent, /ObservedCompleteCertificationMATCH/);
   click(buttons(elements)[0]);
-  assert.match(elements['message-inspector'].textContent, /Statuscomplete/);
+  assert.match(elements['message-inspector'].textContent, /StatusComplete/);
   assert.match(elements['message-inspector'].textContent, /message@1/);
   assert.match(elements['message-inspector'].textContent, /ModelmProviderpInference4 msTotal7 ms/);
   assert.equal(elements['message-inspector'].children.filter(node => node.className === 'axis-detail').length, 4);
@@ -67,7 +67,7 @@ test('message collection, complete low-confidence chips and modeless per-axis in
   assert.match(elements.conversation.textContent, /first.*second/s);
   assert.match(elements.current.textContent, /a/);
   click(buttons(elements)[1]);
-  assert.match(elements['message-inspector'].textContent, /Classification pending · no inferred choices/);
+  assert.match(elements['message-inspector'].textContent, /pendingNo inferred choices/);
   assert.doesNotMatch(elements['message-inspector'].textContent, /implement|instruction/);
   assert.match(elements.current.textContent, /a/);
   assert.deepEqual(h.requests, ['/api/v1/snapshot']);
@@ -78,13 +78,13 @@ test('failed, unavailable, absent metadata and no classification do not invent s
     [annotation(2, 'unavailable', { failure: 'NOT_READY' }), annotation(3, 'failed', { failure: 'INVALID_RESPONSE' }), annotation(4, 'complete')]);
   const h = await harness({ streams: [a] });
   const pane = h.elements['message-inspector'];
-  for (const [index, state] of [[0, 'unavailable'], [1, 'failed']]) {
+  for (const [index, state, failure] of [[0, 'unavailable', 'NOT_READY'], [1, 'failed', 'INVALID_RESPONSE']]) {
     click(buttons(h.elements)[index]);
-    assert.match(pane.textContent, new RegExp(`Classification ${state} · no inferred choices`));
-    assert.doesNotMatch(pane.textContent, /implement|instruction/);
+    assert.match(pane.textContent, new RegExp(state + failure));
+    assert.doesNotMatch(pane.textContent, /No choice|implement|instruction/);
   }
   click(buttons(h.elements)[2]);
-  assert.match(pane.textContent, /Statuscomplete/);
+  assert.match(pane.textContent, /StatusComplete/);
   assert.doesNotMatch(pane.textContent, /undefined|Model|Provider|Inference|Total/);
   click(buttons(h.elements)[3]);
   assert.match(pane.textContent, /No classification observation/);
@@ -94,7 +94,7 @@ test('failed, unavailable, absent metadata and no classification do not invent s
 test('first-party responsive layout keeps the document in one column at narrow widths', async () => {
   const css = await readFile(new URL('../dist/dashboard/dashboard.css', import.meta.url), 'utf8');
   const html = await readFile(new URL('../dist/dashboard/index.html', import.meta.url), 'utf8');
-  assert.match(css, /@media \(max-width: 700px\)\s*\{[\s\S]*?\.workspace \{ display: flex; flex-direction: column; \}/);
+  assert.match(css, /@media \(max-width: 760px\)\s*\{[\s\S]*?\.workspace \{ display: flex; flex-direction: column; \}/);
   assert.match(css, /\.execution-list \{ display: flex; overflow-x: auto;/);
   assert.match(css, /\.message-text \{[^}]*overflow-wrap: anywhere/);
   assert.match(html, /name="viewport"/);
@@ -123,4 +123,44 @@ test('snapshot/SSE recovery preserves surviving selection; eviction, stream remo
   assert.match(h.elements.streams.textContent, /No executions observed yet/);
   assert.match(h.elements['message-inspector'].textContent, /No execution selected/);
   assert.ok(h.requests.every(path => path === '/api/v1/snapshot'));
+});
+
+
+test('execution search/filter and center tabs preserve modeless navigation', async () => {
+  const running = stream('run-1', [message(2, 'running')], [annotation(2, 'complete')]);
+  running.latest['git.observed'].payload.root = '/src/yokodori';
+  running.latest['git.observed'].payload.branch = 'feat/live';
+  const finished = stream('done-1', [message(2, 'finished')], [annotation(2, 'complete')]);
+  finished.closed = true;
+  finished.latest['git.observed'].payload.root = '/src/matagi';
+  finished.latest['git.observed'].payload.branch = 'main';
+
+  const h = await harness({ streams: [running, finished] });
+  const { elements } = h;
+
+  assert.equal(elements['count-all'].textContent, '2');
+  assert.equal(elements['count-running'].textContent, '1');
+  assert.equal(elements['count-finished'].textContent, '1');
+  assert.equal(elements['view-conversation'].hidden, false);
+  assert.equal(elements['view-timeline'].hidden, true);
+
+  elements['filter-finished'].listeners.get('click')();
+  assert.equal(elements.streams.children.length, 1);
+  assert.match(elements.current.textContent, /done-1/);
+  assert.match(elements['execution-status'].textContent, /Finished/);
+
+  elements['filter-all'].listeners.get('click')();
+  elements['execution-search'].value = 'yokodori';
+  elements['execution-search'].listeners.get('input')({ target: elements['execution-search'] });
+  assert.equal(elements.streams.children.length, 1);
+  assert.match(elements['execution-title'].textContent, /yokodori/);
+
+  elements['tab-git'].listeners.get('click')();
+  assert.equal(elements['view-conversation'].hidden, true);
+  assert.equal(elements['view-git'].hidden, false);
+  assert.equal(elements['tab-git']['aria-selected'], 'true');
+
+  await h.update({ streams: [running, finished] });
+  assert.equal(elements['view-git'].hidden, false);
+  assert.match(elements.current.textContent, /run-1/);
 });

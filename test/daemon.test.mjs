@@ -99,10 +99,10 @@ test('loopback, independent streams, admission, SSE, dashboard, bounded snapshot
     assert.equal(css.status, 200);
     assert.match(css.headers.get('content-type'), /text\/css/);
     const stylesheet = await css.text();
-    assert.match(stylesheet, /grid-template-columns: minmax\(210px, 235px\) minmax\(0, 1fr\) minmax\(270px, 315px\)/);
+    assert.match(stylesheet, /grid-template-columns: 276px minmax\(0, 1fr\) 340px/);
     assert.match(stylesheet, /\.message-card/);
     assert.match(stylesheet, /white-space: pre-wrap/);
-    assert.match(stylesheet, /@media \(max-width: 700px\)/);
+    assert.match(stylesheet, /@media \(max-width: 760px\)/);
     assert.match(await (await fetch(url + '/dashboard.js')).text(), /EventSource/);
     const sse = await fetch(url + '/api/v1/live');
     const reader = sse.body.getReader();
@@ -150,7 +150,7 @@ test('dashboard renders conversation observations and keeps snapshot/SSE selecti
     addEventListener(name, handler) { this.listeners.set(name, handler); }
     setAttribute(name, value) { this[name] = value; }
   }
-  const ids = ['streams', 'current', 'repo', 'context', 'retention', 'timeline', 'conversation', 'message-inspector', 'execution-title', 'execution-meta'];
+  const ids = ['streams', 'current', 'repo', 'context', 'retention', 'timeline', 'conversation', 'message-inspector', 'execution-title', 'execution-meta', 'execution-status', 'execution-search', 'count-all', 'count-running', 'count-finished', 'filter-all', 'filter-running', 'filter-finished', 'tab-conversation', 'tab-timeline', 'tab-git', 'view-conversation', 'view-timeline', 'view-git', 'execution-evidence'];
   const elements = Object.fromEntries(ids.map(id => [id, new Element('DIV')]));
   let snapshot = { streams: [] };
   let live;
@@ -195,8 +195,8 @@ test('dashboard renders conversation observations and keeps snapshot/SSE selecti
   assert.match(elements.current.textContent, /one/);
   elements.streams.children[1].listeners.get('click')();
   assert.match(elements.current.textContent, /two/);
-  assert.match(elements.repo.textContent, /\/repo · main · a{12} · clean/);
-  assert.match(elements.context.textContent, /MATCH · complete/);
+  assert.match(elements.repo.textContent, /Root\/repoBranchmainHEAD[a]{40}Working treeclean/);
+  assert.match(elements.context.textContent, /ObservedCompleteCertificationMATCH/);
   assert.match(elements.timeline.textContent, /git\.observed/);
   assert.match(elements.conversation.textContent, /What changed\?/);
   assert.match(elements.conversation.textContent, /The <b>status<\/b> is clean\./);
