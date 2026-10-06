@@ -137,7 +137,7 @@ test('Git observation is read-only', async () => {
 
 test('dashboard renders conversation observations and keeps snapshot/SSE selection', async () => {
   class Element {
-    constructor(tagName = '') { this.tagName = tagName; this.children = []; this.listeners = new Map(); this.value = ''; this._text = ''; }
+    constructor(tagName = '') { this.tagName = tagName; this.children = []; this.listeners = new Map(); this.value = ''; this._text = ''; this.dataset = {}; }
     set textContent(value) { this._text = String(value); this.children = []; }
     get textContent() { return this._text + this.children.map(child => child.textContent).join(''); }
     append(...children) {
@@ -149,6 +149,7 @@ test('dashboard renders conversation observations and keeps snapshot/SSE selecti
     replaceChildren(...children) { this.children = []; this._text = ''; if (this.tagName === 'SELECT') this.value = ''; this.append(...children); }
     addEventListener(name, handler) { this.listeners.set(name, handler); }
     setAttribute(name, value) { this[name] = value; }
+    contains(node) { return this.children.includes(node); }
   }
   const ids = ['streams', 'current', 'repo', 'context', 'retention', 'timeline', 'conversation', 'message-inspector', 'execution-title', 'execution-meta', 'execution-status', 'execution-search', 'count-all', 'count-running', 'count-finished', 'filter-all', 'filter-running', 'filter-finished', 'tab-conversation', 'tab-timeline', 'tab-git', 'view-conversation', 'view-timeline', 'view-git', 'execution-evidence', 'current-state', 'health'];
   const elements = Object.fromEntries(ids.map(id => [id, new Element('DIV')]));
@@ -192,8 +193,6 @@ test('dashboard renders conversation observations and keeps snapshot/SSE selecti
   await runInNewContext(script, context);
 
   assert.equal(live.url, '/api/v1/live');
-  assert.match(elements.current.textContent, /one/);
-  elements.streams.children[1].listeners.get('click')();
   assert.match(elements.current.textContent, /two/);
   assert.match(elements.repo.textContent, /Root\/repoBranchmainHEAD[a]{40}Working treeclean/);
   assert.match(elements.context.textContent, /ObservedCompleteCertificationMATCH/);
@@ -205,7 +204,7 @@ test('dashboard renders conversation observations and keeps snapshot/SSE selecti
   assert.match(elements.conversation.textContent, /Truncated · 64 bytes/);
   assert.doesNotMatch(elements.conversation.textContent, /system prompt/i);
 
-  elements.streams.children[0].listeners.get('click')();
+  elements.streams.children[1].listeners.get('click')();
   assert.match(elements.current.textContent, /one/);
   assert.match(elements.conversation.textContent, /No retained conversation observations yet/);
 

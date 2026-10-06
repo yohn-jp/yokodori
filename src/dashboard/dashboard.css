@@ -175,6 +175,9 @@ h3 { margin-bottom: 0; font-size: 12px; }
   cursor: pointer;
 }
 .execution-item:hover { background: var(--surface-2); }
+.execution-item.finished { padding-top: 7px; padding-bottom: 7px; color: var(--muted); }
+.execution-item.finished .execution-name { font-weight: 500; }
+.execution-item.finished[aria-current="true"] { color: var(--text); }
 .execution-item[aria-current="true"] {
   border-color: #315b7e;
   background: var(--accent-soft);
