@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "context": [
+    {
+      "path": ".github/agent-governance/AGENTS.md",
+      "kind": "instructions",
+      "rank": 100
+    },
+    {
+      "path": "AGENTS.md",
+      "kind": "instructions",
+      "rank": 200
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "kind": "repository",
+      "rank": 300
+    },
+    {
+      "path": "README.md",
+      "kind": "repository",
+      "rank": 400
+    }
+  ]
+}
