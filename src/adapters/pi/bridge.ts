@@ -33,7 +33,9 @@ export function createBridge() {
     void (async () => {
       while (queue.length > 0) {
         try {
-          await postEnvelope(queue[0]);
+          const envelope = queue[0];
+          if (!envelope) break;
+          await postEnvelope(envelope);
           queue.shift();
           lastFailure = undefined;
         } catch (error) {
