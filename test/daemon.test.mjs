@@ -150,7 +150,7 @@ test('dashboard renders conversation observations and keeps snapshot/SSE selecti
     addEventListener(name, handler) { this.listeners.set(name, handler); }
     setAttribute(name, value) { this[name] = value; }
   }
-  const ids = ['streams', 'current', 'repo', 'context', 'retention', 'timeline', 'conversation', 'message-inspector', 'execution-title', 'execution-meta', 'execution-status', 'execution-search', 'count-all', 'count-running', 'count-finished', 'filter-all', 'filter-running', 'filter-finished', 'tab-conversation', 'tab-timeline', 'tab-git', 'view-conversation', 'view-timeline', 'view-git', 'execution-evidence'];
+  const ids = ['streams', 'current', 'repo', 'context', 'retention', 'timeline', 'conversation', 'message-inspector', 'execution-title', 'execution-meta', 'execution-status', 'execution-search', 'count-all', 'count-running', 'count-finished', 'filter-all', 'filter-running', 'filter-finished', 'tab-conversation', 'tab-timeline', 'tab-git', 'view-conversation', 'view-timeline', 'view-git', 'execution-evidence', 'current-state', 'health'];
   const elements = Object.fromEntries(ids.map(id => [id, new Element('DIV')]));
   let snapshot = { streams: [] };
   let live;
