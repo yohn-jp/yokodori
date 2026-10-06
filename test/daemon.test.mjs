@@ -99,10 +99,10 @@ test('loopback, independent streams, admission, SSE, dashboard, bounded snapshot
     assert.equal(css.status, 200);
     assert.match(css.headers.get('content-type'), /text\/css/);
     const stylesheet = await css.text();
-    assert.match(stylesheet, /grid-template-columns: 250px minmax\(0, 1fr\) 320px/);
+    assert.match(stylesheet, /grid-template-columns: minmax\(210px, 235px\) minmax\(0, 1fr\) minmax\(270px, 315px\)/);
     assert.match(stylesheet, /\.message-card/);
     assert.match(stylesheet, /white-space: pre-wrap/);
-    assert.match(stylesheet, /@media \(max-width: 760px\)/);
+    assert.match(stylesheet, /@media \(max-width: 700px\)/);
     assert.match(await (await fetch(url + '/dashboard.js')).text(), /EventSource/);
     const sse = await fetch(url + '/api/v1/live');
     const reader = sse.body.getReader();
@@ -150,8 +150,8 @@ test('dashboard renders conversation observations and keeps snapshot/SSE selecti
     addEventListener(name, handler) { this.listeners.set(name, handler); }
     setAttribute(name, value) { this[name] = value; }
   }
-  const ids = ['stream', 'current', 'repo', 'context', 'timeline', 'conversation'];
-  const elements = Object.fromEntries(ids.map(id => [id, new Element(id === 'stream' ? 'SELECT' : 'DIV')]));
+  const ids = ['streams', 'current', 'repo', 'context', 'retention', 'timeline', 'conversation', 'message-inspector', 'execution-title', 'execution-meta'];
+  const elements = Object.fromEntries(ids.map(id => [id, new Element('DIV')]));
   let snapshot = { streams: [] };
   let live;
   const document = {
@@ -189,11 +189,12 @@ test('dashboard renders conversation observations and keeps snapshot/SSE selecti
   };
   const streamOne = { streamId: 'one', sequence: 1, closed: false, latest: {}, events: [event('one', 1)] };
   snapshot = { streams: [streamOne, streamTwo] };
-  elements.stream.value = 'two';
   await runInNewContext(script, context);
 
   assert.equal(live.url, '/api/v1/live');
-  assert.equal(elements.stream.value, 'two');
+  assert.match(elements.current.textContent, /one/);
+  elements.streams.children[1].listeners.get('click')();
+  assert.match(elements.current.textContent, /two/);
   assert.match(elements.repo.textContent, /\/repo · main · a{12} · clean/);
   assert.match(elements.context.textContent, /MATCH · complete/);
   assert.match(elements.timeline.textContent, /git\.observed/);
@@ -204,15 +205,14 @@ test('dashboard renders conversation observations and keeps snapshot/SSE selecti
   assert.match(elements.conversation.textContent, /Truncated · 64 bytes/);
   assert.doesNotMatch(elements.conversation.textContent, /system prompt/i);
 
-  elements.stream.value = 'one';
-  await elements.stream.listeners.get('change')();
-  assert.equal(elements.stream.value, 'one');
+  elements.streams.children[0].listeners.get('click')();
+  assert.match(elements.current.textContent, /one/);
   assert.match(elements.conversation.textContent, /No retained conversation observations yet/);
 
   snapshot = { streams: [streamTwo, streamOne] };
   await live.listeners.get('update')();
-  assert.equal(elements.stream.value, 'one');
+  assert.match(elements.current.textContent, /one/);
   assert.match(elements.conversation.textContent, /No retained conversation observations yet/);
   await live.listeners.get('open')();
-  assert.equal(elements.stream.value, 'one');
+  assert.match(elements.current.textContent, /one/);
 });
