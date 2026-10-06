@@ -317,6 +317,7 @@ h3 { margin-bottom: 0; font-size: 12px; }
   cursor: pointer;
 }
 .message-shell {
+  display: block;
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
