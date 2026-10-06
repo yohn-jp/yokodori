@@ -78,10 +78,10 @@ test('failed, unavailable, absent metadata and no classification do not invent s
     [annotation(2, 'unavailable', { failure: 'NOT_READY' }), annotation(3, 'failed', { failure: 'INVALID_RESPONSE' }), annotation(4, 'complete')]);
   const h = await harness({ streams: [a] });
   const pane = h.elements['message-inspector'];
-  for (const [index, state] of [[0, 'unavailable'], [1, 'failed']]) {
+  for (const [index, state, failure] of [[0, 'unavailable', 'NOT_READY'], [1, 'failed', 'INVALID_RESPONSE']]) {
     click(buttons(h.elements)[index]);
-    assert.match(pane.textContent, new RegExp(`${state}No inferred choices`));
-    assert.doesNotMatch(pane.textContent, /implement|instruction/);
+    assert.match(pane.textContent, new RegExp(state + failure));
+    assert.doesNotMatch(pane.textContent, /No choice|implement|instruction/);
   }
   click(buttons(h.elements)[2]);
   assert.match(pane.textContent, /StatusComplete/);
