@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { createDaemon } from '../dist/daemon/server.js';
 import { MAX_MESSAGE_TEXT_BYTES } from '../dist/protocol/observation.js';
 import extension from '../dist/adapters/pi/package-extension.js';
+import { createBridge } from '../dist/adapters/pi/bridge.js';
 const wait = async predicate => { for (let n = 0; n < 100; n++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 20)); } throw new Error('Timed out waiting for observation'); };
 test('package Pi hooks emit bounded evidence; delivery failure never blocks context path', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'yokodori-bridge-'));
@@ -82,6 +83,58 @@ test('Pi final-message observation emits only bounded user and assistant text', 
     assert.deepEqual(stream.events.filter(event => event.kind === 'message.observed').map(event => event.payload.role), ['user', 'user', 'assistant']);
   } finally {
     await daemon.close();
+    if (previous === undefined) delete process.env.YOKODORI_RUNTIME_DIR; else process.env.YOKODORI_RUNTIME_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+
+test('Pi bridge retries the same envelope after transient rejection and preserves sequence', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'yokodori-retry-'));
+  const previous = process.env.YOKODORI_RUNTIME_DIR;
+  process.env.YOKODORI_RUNTIME_DIR = dir;
+  let rejectFirstEvent = true;
+  const accepted = [];
+  const server = (await import('node:http')).createServer(async (request, response) => {
+    let body = '';
+    for await (const chunk of request) body += chunk;
+    if (request.url === '/api/v1/streams') { response.writeHead(201); response.end(); return; }
+    if (request.url?.includes('/events')) {
+      const event = JSON.parse(body);
+      if (rejectFirstEvent) { rejectFirstEvent = false; response.writeHead(503); response.end(); return; }
+      accepted.push(event); response.writeHead(201); response.end(); return;
+    }
+    response.writeHead(404); response.end();
+  });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  try {
+    await writeFile(join(dir, 'endpoint.json'), JSON.stringify({ url: `http://127.0.0.1:${server.address().port}` }));
+    const bridge = createBridge();
+    bridge.emit({ kind: 'stream.opened', payload: {} });
+    await wait(() => bridge.status().state === 'degraded');
+    bridge.emit({ kind: 'context.injected', payload: { state: 'injected', boundary: 'fixture' } });
+    await wait(() => accepted.length === 2);
+    assert.deepEqual(accepted.map(event => event.sequence), [1, 2]);
+    assert.equal(bridge.status().state, 'healthy');
+    assert.equal(bridge.status().pending, 0);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    if (previous === undefined) delete process.env.YOKODORI_RUNTIME_DIR; else process.env.YOKODORI_RUNTIME_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Pi bridge bounds unavailable-daemon queue and exposes dropped observation count', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'yokodori-bound-'));
+  const previous = process.env.YOKODORI_RUNTIME_DIR;
+  process.env.YOKODORI_RUNTIME_DIR = dir;
+  try {
+    const bridge = createBridge();
+    for (let n = 0; n < 20; n++) bridge.emit({ kind: 'context.injected', payload: { state: 'injected', boundary: 'fixture' } });
+    await wait(() => bridge.status().state === 'degraded');
+    assert.ok(bridge.status().pending <= 8);
+    assert.ok(bridge.status().dropped > 0);
+  } finally {
     if (previous === undefined) delete process.env.YOKODORI_RUNTIME_DIR; else process.env.YOKODORI_RUNTIME_DIR = previous;
     await rm(dir, { recursive: true, force: true });
   }
