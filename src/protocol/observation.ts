@@ -7,7 +7,7 @@ export type ObservationEventV1 = {
   | { readonly kind: 'stream.closed'; readonly payload: Record<string, never> }
   | { readonly kind: 'context.compiled'; readonly payload: { readonly digest: string; readonly sourceCount: number; readonly rendererVersion: string } }
   | { readonly kind: 'context.injected'; readonly payload: { readonly state: 'injected'; readonly boundary: string } }
-  | { readonly kind: 'context.observed'; readonly payload: { readonly requestSequence: number; readonly boundary: string; readonly complete: boolean; readonly observedDigest?: string; readonly certification: 'MATCH' | 'MISMATCH' } }
+  | { readonly kind: 'context.observed'; readonly payload: { readonly requestSequence: number; readonly boundary: string; readonly complete: boolean; readonly observedDigest?: string; readonly certification: 'MATCH' | 'MISMATCH'; readonly omittedFieldCount?: number; readonly omittedFields?: readonly string[] } }
   | { readonly kind: 'message.observed'; readonly payload: { readonly role: 'user' | 'assistant'; readonly text: string; readonly truncated: boolean; readonly originalBytes?: number } }
   | { readonly kind: 'git.observed'; readonly payload: { readonly root: string; readonly branch?: string; readonly head?: string; readonly dirty: 'dirty' | 'clean' | 'unknown' } }
 );
@@ -36,7 +36,7 @@ export function parseObservationEvent(v: unknown): ObservationEventV1 {
     case 'stream.closed': valid = keys(p, []); break;
     case 'context.compiled': valid = keys(p, ['digest', 'sourceCount', 'rendererVersion']) && digest(p.digest) && nat(p.sourceCount) && str(p.rendererVersion); break;
     case 'context.injected': valid = keys(p, ['state', 'boundary']) && p.state === 'injected' && str(p.boundary); break;
-    case 'context.observed': valid = keys(p, ['requestSequence', 'boundary', 'complete', 'certification'], ['observedDigest']) && nat(p.requestSequence) && (typeof p.requestSequence === 'number' && p.requestSequence > 0) && str(p.boundary) && typeof p.complete === 'boolean' && (p.observedDigest === undefined || digest(p.observedDigest)) && (p.certification === 'MATCH' || p.certification === 'MISMATCH'); break;
+    case 'context.observed': valid = keys(p, ['requestSequence', 'boundary', 'complete', 'certification'], ['observedDigest', 'omittedFieldCount', 'omittedFields']) && nat(p.requestSequence) && (typeof p.requestSequence === 'number' && p.requestSequence > 0) && str(p.boundary) && typeof p.complete === 'boolean' && (p.observedDigest === undefined || digest(p.observedDigest)) && (p.certification === 'MATCH' || p.certification === 'MISMATCH') && (p.omittedFieldCount === undefined || nat(p.omittedFieldCount)) && (p.omittedFields === undefined || (Array.isArray(p.omittedFields) && p.omittedFields.length <= 16 && p.omittedFields.every(item => typeof item === 'string' && item.length <= 256))); break;
     case 'message.observed': {
       const bytes = typeof p.text === 'string' ? textBytes(p.text) : Infinity;
       valid = keys(p, ['role', 'text', 'truncated'], ['originalBytes']) &&

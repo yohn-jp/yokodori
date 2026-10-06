@@ -31,7 +31,7 @@ export function normalizeMessage(value: unknown): OutboundMessage {
   };
   const payload = project(value, '$');
   const role = value !== null && typeof value === 'object' && 'role' in value && typeof value.role === 'string' ? value.role : 'unknown';
-  return { role, payload, complete: omitted.length === 0, omittedFields: omitted };
+  return { role, payload, complete: omitted.length === 0, omittedFields: omitted.slice(0, 16), omittedFieldCount: omitted.length };
 }
 
 export function snapshot(messages: readonly unknown[], requestSequence: number, fidelity: OutboundContextSnapshot['fidelity']): OutboundContextSnapshot {

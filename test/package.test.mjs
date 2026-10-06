@@ -18,7 +18,7 @@ import {
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
 import { snapshot } from '../dist/core/outbound.js';
 import { digest } from '../dist/language/canonical.js';
-import { loadInstructions } from '../dist/adapters/pi/instruct.js';
+import { loadInstructions } from '../dist/adapters/pi/instruct.js';\nimport { createDaemon } from '../dist/daemon/server.js';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const fidelity = { boundary: 'pi.context_with_system', providerEffective: false };
@@ -50,7 +50,7 @@ function runAsync(command, args, options = {}) {
   });
 }
 
-async function capturedProviderContext({ cwd, agentDir, withPackage, expectedState, afterStart, onProof, tamper }) {
+async function capturedProviderContext({ cwd, agentDir, withPackage, expectedState, afterStart, onProof, tamper, partial }) {
   const received = [];
   const settingsManager = withPackage
     ? SettingsManager.create(cwd, agentDir)
@@ -67,7 +67,7 @@ async function capturedProviderContext({ cwd, agentDir, withPackage, expectedSta
     assert.ok(extension, 'Pi did not discover the packed manifest entrypoint');
     assert.ok(extension.commands.has('yokodori'), 'Pi did not load the admission command');
     assert.ok(extension.handlers.has('before_agent_start'));
-    assert.ok(extension.handlers.has('context_with_system'));
+    assert.ok(extension.handlers.has('context_with_system'));\n    assert.ok(extension.handlers.has('message_end'));
     assert.deepEqual(loaded.errors, []);
     assert.equal((loaded.warnings ?? []).some(({ warning }) => warning.includes('duplicate runtime modules')), false);
   }
@@ -101,10 +101,11 @@ async function capturedProviderContext({ cwd, agentDir, withPackage, expectedSta
     await session.prompt('Package first ordinary request');
     if (withPackage) {
       const extension = resourceLoader.getExtensions().extensions.find(({ path }) => path.endsWith('package-extension.js'));
-      if (tamper) {
+      if (tamper || partial) {
         const section = received[0].messages[0].sections.yokodori_initial_context;
         await extension.handlers.get('context_with_system')[0]({ messages: [{ role: 'system', content: '',
-          sections: { yokodori_initial_context: section.replace('Source: file:AGENTS.md', 'Source: file:tampered.md') } }] });
+          sections: { yokodori_initial_context: tamper ? section.replace('Source: file:AGENTS.md', 'Source: file:tampered.md') : section },
+          ...(partial ? { unsupported: () => undefined } : {}) }] });
       }
       const notices = [];
       await extension.commands.get('yokodori').handler('', { ui: { notify: text => notices.push(JSON.parse(text)) } });
@@ -112,8 +113,8 @@ async function capturedProviderContext({ cwd, agentDir, withPackage, expectedSta
       assert.equal(proof.state, expectedState, JSON.stringify(proof));
       if (expectedState === 'observed') {
         assert.equal(proof.boundary, 'pi.context_with_system');
-        assert.equal(proof.requestSequence, 1);
-        assert.equal(proof.complete, true);
+        assert.equal(proof.requestSequence, partial ? 2 : 1);
+        assert.equal(proof.complete, !partial);
         assert.equal(proof.matched, true);
         assert.equal(proof.compiledDigest, proof.observedInjectedDigest);
       }
@@ -240,11 +241,50 @@ test('packed npm artifact: manifest admission before first request and observed 
   assert.equal(digest(body), certified.observedInjectedDigest);
   assert.equal(certified.observedInjectedDigest, certified.compiledDigest);
 
+  // Prove the production conversation path through real Pi hooks and the daemon.
+  const runtimeDir = join(temporary, 'runtime');
+  await mkdir(runtimeDir, { recursive: true });
+  const previousRuntimeDir = process.env.YOKODORI_RUNTIME_DIR;
+  process.env.YOKODORI_RUNTIME_DIR = runtimeDir;
+  const daemon = createDaemon();
+  const daemonUrl = await daemon.listen();
+  await writeFile(join(runtimeDir, 'endpoint.json'), JSON.stringify({ url: daemonUrl }));
+  try {
+    await capturedProviderContext({ cwd: project, agentDir: packageRoot, withPackage: true, expectedState: 'observed' });
+    let observedStream;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const daemonSnapshot = await (await fetch(daemonUrl + '/api/v1/snapshot')).json();
+      observedStream = daemonSnapshot.streams.find(stream => stream.messages?.length >= 2);
+      if (observedStream) break;
+      await new Promise(resolveWait => setTimeout(resolveWait, 25));
+    }
+    assert.ok(observedStream, 'real Pi message_end observations did not reach the daemon');
+    assert.deepEqual(observedStream.messages.map(message => [message.role, message.text]), [
+      ['user', 'Package first ordinary request'],
+      ['assistant', 'ok'],
+    ]);
+    assert.equal(observedStream.messages.every(message => message.truncated === false), true);
+    assert.ok(observedStream.messages[0].sequence < observedStream.messages[1].sequence);
+  } finally {
+    await daemon.close();
+    if (previousRuntimeDir === undefined) delete process.env.YOKODORI_RUNTIME_DIR;
+    else process.env.YOKODORI_RUNTIME_DIR = previousRuntimeDir;
+  }
+
   let mismatch;
   await capturedProviderContext({ cwd: project, agentDir: packageRoot, withPackage: true,
     expectedState: 'certification_failure', tamper: true, onProof: proof => { mismatch = proof; } });
   assert.equal(mismatch.matched, false);
   assert.notEqual(mismatch.observedInjectedDigest, mismatch.compiledDigest);
+
+  let partialProof;
+  await capturedProviderContext({ cwd: project, agentDir: packageRoot, withPackage: true,
+    expectedState: 'observed', partial: true, onProof: proof => { partialProof = proof; } });
+  assert.equal(partialProof.matched, true);
+  assert.equal(partialProof.complete, false);
+  assert.equal(partialProof.compiledDigest, partialProof.observedInjectedDigest);
+  assert.ok(partialProof.omittedFieldCount >= 1);
+  assert.ok(partialProof.omittedFields.some(path => path.endsWith('.unsupported')));
 
   const entries = [
     { path: 'AGENTS.md', kind: 'instructions', rank: 200 },

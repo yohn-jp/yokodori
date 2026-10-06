@@ -36,7 +36,7 @@ export interface OutboundMessage {
   readonly role: string;
   readonly payload: SemanticValue;
   readonly complete: boolean;
-  readonly omittedFields: readonly string[];
+  readonly omittedFields: readonly string[];\n  readonly omittedFieldCount: number;
 }
 export interface OutboundContextSnapshot {
   readonly version: 1;

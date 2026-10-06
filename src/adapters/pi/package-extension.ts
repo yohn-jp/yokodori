@@ -9,7 +9,7 @@ import { observeGit } from './git-observation.js';
 
 type Status = { state: 'unconfigured' | 'ready' | 'observed' | 'configuration_failure' | 'certification_failure';
   instructionFile: string; sourceCount?: number; compiledDigest?: string; requestSequence?: number;
-  boundary?: string; complete?: boolean; observedInjectedDigest?: string; matched?: boolean; failure?: string };
+  boundary?: string; complete?: boolean; observedInjectedDigest?: string; matched?: boolean; failure?: string;\n  omittedFieldCount?: number; omittedFields?: string[]; bridge?: ReturnType<ReturnType<typeof createBridge>['status']> };
 type MessagePayload = Extract<ObservationEventV1, { kind: 'message.observed' }>['payload'];
 
 function utf8Prefix(value: string, maxBytes: number): { text: string; bytes: number } {
@@ -103,16 +103,20 @@ export default function yokodoriPackageExtension(pi: ExtensionAPI): void {
       const text = section?.startsWith(prefix) && section.endsWith(suffix)
         ? section.slice(prefix.length, -suffix.length) : undefined;
       const observedInjectedDigest = text === undefined ? undefined : digest(text);
-      const matched = observed.complete && observedInjectedDigest === compiled.compiled.digest;
+      const matched = observedInjectedDigest !== undefined && observedInjectedDigest === compiled.compiled.digest;
+      const omittedFields = observed.messages.flatMap(message => message.omittedFields).slice(0, 16);
+      const omittedFieldCount = observed.messages.reduce((sum, message) => sum + message.omittedFieldCount, 0);
       status = { state: matched ? 'observed' : 'certification_failure', ...base, complete: observed.complete,
         ...(observedInjectedDigest ? { observedInjectedDigest } : {}), matched,
-        ...(!matched ? { failure: 'Observed section missing, incomplete, or digest mismatch' } : {}) };
+        ...(omittedFieldCount ? { omittedFieldCount, omittedFields } : {}),
+        ...(!matched ? { failure: observedInjectedDigest === undefined ? 'Observed injected section missing' : 'Observed injected digest mismatch' } : {}) };
     } catch {
       status = { state: 'certification_failure', ...base, complete: false, matched: false, failure: 'Observation failed' };
     }
     bridge.emit({ kind: 'context.observed', completeness: status.complete ? 'complete' : 'partial',
       payload: { requestSequence: current, boundary: 'pi.context_with_system', complete: status.complete ?? false,
         ...(status.observedInjectedDigest ? { observedDigest: status.observedInjectedDigest } : {}),
+        ...(status.omittedFieldCount ? { omittedFieldCount: status.omittedFieldCount, omittedFields: status.omittedFields } : {}),
         certification: status.matched ? 'MATCH' : 'MISMATCH' } });
     // Notification only; observation never changes the provider request.
   });
@@ -125,7 +129,7 @@ export default function yokodoriPackageExtension(pi: ExtensionAPI): void {
     description: 'Show bounded Yokodori instruction and observation status',
     handler: async (args, ctx) => {
       if (args.trim() && args.trim() !== 'status') { ctx.ui.notify('Usage: /yokodori [status]', 'error'); return; }
-      ctx.ui.notify(JSON.stringify(status), status.state.endsWith('failure') ? 'error' : 'info');
+      const report = { ...status, bridge: bridge.status() };\n      ctx.ui.notify(JSON.stringify(report), status.state.endsWith('failure') ? 'error' : 'info');
     },
   });
 }
