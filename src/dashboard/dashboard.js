@@ -103,6 +103,25 @@ function lastObservedAt(stream) {
   return eventTime || messageTime || (stream && stream.latest && stream.latest['stream.opened'] ? stream.latest['stream.opened'].observedAt : undefined);
 }
 
+function observationTime(stream) {
+  const times = [...(stream.events || []), ...(stream.messages || []), ...Object.values(stream.latest || {})]
+    .map(function (event) { return event.observedAt; })
+    .map(function (value) { return { value, millis: Date.parse(value) }; })
+    .filter(function (entry) { return Number.isFinite(entry.millis); });
+  times.sort(function (a, b) { return b.millis - a.millis || b.value.localeCompare(a.value); });
+  return times[0];
+}
+
+function relativeRecency(time, now) {
+  if (!time) return undefined;
+  const minutes = Math.max(0, Math.floor((now - time.millis) / 60000));
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return minutes + 'm';
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours + 'h';
+  return Math.floor(hours / 24) + 'd';
+}
+
 function matchesStream(stream) {
   const state = streamState(stream);
   if (executionFilter !== 'all' && state !== executionFilter) return false;
@@ -114,7 +133,12 @@ function matchesStream(stream) {
 }
 
 function visibleStreams() {
-  return snapshot.streams.filter(matchesStream);
+  return snapshot.streams.filter(matchesStream).sort(function (a, b) {
+    if (a.closed !== b.closed) return a.closed ? 1 : -1;
+    const aTime = observationTime(a)?.millis ?? -Infinity;
+    const bTime = observationTime(b)?.millis ?? -Infinity;
+    return bTime - aTime || (a.streamId < b.streamId ? -1 : a.streamId > b.streamId ? 1 : 0);
+  });
 }
 
 function ensureVisibleSelection() {
@@ -136,6 +160,7 @@ function renderFilterCounts() {
 }
 
 function renderStreams() {
+  const focusedId = streamsView.contains(document.activeElement) ? document.activeElement.dataset.streamId : null;
   streamsView.replaceChildren();
   renderFilterCounts();
   const visible = visibleStreams();
@@ -149,7 +174,8 @@ function renderStreams() {
     const state = streamState(item);
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'execution-item';
+    button.className = 'execution-item ' + state;
+    button.dataset.streamId = item.streamId;
     button.setAttribute('aria-current', item.streamId === selectedStreamId ? 'true' : 'false');
     if (git && git.root) button.setAttribute('title', git.root);
 
@@ -167,8 +193,14 @@ function renderStreams() {
     const foot = document.createElement('span');
     foot.className = 'execution-foot';
     text(foot, 'span', 'execution-stream', shortId(item.streamId));
-    const last = formatTime(lastObservedAt(item));
-    if (last) text(foot, 'time', '', last);
+    const observed = observationTime(item);
+    const recency = relativeRecency(observed, Date.now());
+    if (recency) {
+      const time = text(foot, 'time', '', recency);
+      time.setAttribute('datetime', observed.value);
+      time.setAttribute('title', observed.value);
+      time.setAttribute('aria-label', 'Last observed ' + observed.value);
+    }
     button.append(foot);
 
     button.addEventListener('click', function () {
@@ -178,8 +210,27 @@ function renderStreams() {
       render();
     });
     streamsView.append(button);
+    if (focusedId === item.streamId) button.focus();
   });
 }
+
+streamsView.addEventListener('keydown', function (event) {
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+  const entries = Array.from(streamsView.querySelectorAll('button'));
+  const index = entries.indexOf(event.target);
+  if (index < 0) return;
+  event.preventDefault();
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? entries.length - 1 :
+    Math.max(0, Math.min(entries.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)));
+  const id = entries[next].dataset.streamId;
+  if (selectedStreamId !== id) {
+    selectedStreamId = id;
+    selectedMessageSequence = null;
+    render();
+  }
+  const buttons = Array.from(streamsView.querySelectorAll('button'));
+  buttons[next].focus();
+});
 
 function renderExecutionHeader(stream) {
   const title = document.getElementById('execution-title');

@@ -4,13 +4,16 @@ import { readFile } from 'node:fs/promises';
 import { runInNewContext } from 'node:vm';
 
 class Element {
-  constructor(tag = '') { this.tag = tag; this.children = []; this.listeners = new Map(); this._text = ''; }
+  constructor(tag = '') { this.tag = tag; this.children = []; this.listeners = new Map(); this._text = ''; this.dataset = {}; }
   set textContent(value) { this._text = String(value); this.children = []; }
   get textContent() { return this._text + this.children.map(child => child.textContent).join(''); }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this._text = ''; this.children = children; }
   addEventListener(type, fn) { this.listeners.set(type, fn); }
   setAttribute(name, value) { this[name] = value; }
+  querySelectorAll(tag) { return this.children.filter(child => child.tag === tag); }
+  contains(node) { return this.children.includes(node); }
+  focus() { this.focused = true; this.ownerDocument.activeElement = this; }
 }
 const ids = ['streams','current','repo','context','retention','timeline','conversation','message-inspector','execution-title','execution-meta','execution-status','execution-search','count-all','count-running','count-finished','filter-all','filter-running','filter-finished','tab-conversation','tab-timeline','tab-git','view-conversation','view-timeline','view-git','execution-evidence','current-state','health'];
 const axes = [
@@ -33,7 +36,8 @@ const buttons = elements => elements.conversation.children[0].children.map(item 
 async function harness(initial) {
   const elements = Object.fromEntries(ids.map(id => [id, new Element()]));
   let snapshot = initial; let live; const requests = [];
-  const document = { getElementById: id => elements[id], createElement: tag => new Element(tag), createTextNode: text => { const n = new Element(); n.textContent = text; return n; } };
+  const document = { activeElement: null, getElementById: id => elements[id], createElement: tag => { const n = new Element(tag); n.ownerDocument = document; return n; }, createTextNode: text => { const n = new Element(); n.textContent = text; return n; } };
+  Object.values(elements).forEach(node => { node.ownerDocument = document; });
   const context = { document, fetch: async path => { requests.push(path); return { ok: true, json: async () => snapshot }; },
     EventSource: class { constructor(path) { this.path = path; live = this; this.listeners = new Map(); } addEventListener(type, fn) { this.listeners.set(type, fn); } } };
   const script = await readFile(new URL('../dist/dashboard/dashboard.js', import.meta.url), 'utf8');
@@ -209,4 +213,70 @@ test('execution search/filter and center tabs preserve modeless navigation', asy
   await h.update({ streams: [running, finished] });
   assert.equal(elements['view-git'].hidden, false);
   assert.match(elements.current.textContent, /run-1/);
+});
+
+
+test('execution ordering, recency, filters, keyboard and SSE selection use canonical observations', async () => {
+  const at = (id, time, closed = false) => {
+    const s = stream(id, [message(2, id)]);
+    s.closed = closed;
+    s.latest['git.observed'].payload.branch = 'trunk';
+    s.messages[0].observedAt = time;
+    return s;
+  };
+  const old = '2026-01-01T00:00:00Z';
+  const recent = new Date(Date.now() - 2 * 60000).toISOString();
+  const a = at('a', old), b = at('b', recent), c = at('c', recent, true), d = at('d', old, true), e = at('e', old);
+  const h = await harness({ streams: [d, e, c, b, a] });
+  const { elements } = h;
+  const order = () => elements.streams.children.map(node => node.dataset.streamId);
+  assert.deepEqual(order(), ['b', 'a', 'e', 'c', 'd']);
+  const time = elements.streams.children[0].children[2].children[1];
+  assert.equal(time.textContent, '2m');
+  assert.equal(time.title, recent);
+  assert.equal(time.datetime, recent);
+  assert.match(elements.streams.children[3].className, /finished/);
+  const nav = (index, key) => {
+    const target = elements.streams.children[index];
+    elements.streams.listeners.get('keydown')({ key, target, preventDefault() {} });
+  };
+  nav(0, 'ArrowDown');
+  assert.match(elements.current.textContent, /a/);
+  assert.equal(elements.streams.children[1].focused, true);
+  nav(1, 'ArrowUp');
+  assert.match(elements.current.textContent, /b/);
+  nav(0, 'End');
+  assert.match(elements.current.textContent, /d/);
+  nav(4, 'Home');
+  assert.match(elements.current.textContent, /b/);
+  click(buttons(elements)[0]);
+  click(elements['tab-git']);
+  b.messages[0].observedAt = new Date(Date.now() - 60000).toISOString();
+  await h.update({ streams: [d, a, c, e, b] });
+  assert.match(elements.current.textContent, /b/);
+  assert.equal(buttons(elements)[0]['aria-pressed'], 'true');
+  assert.equal(elements['view-git'].hidden, false);
+  elements['filter-finished'].listeners.get('click')();
+  assert.deepEqual(order(), ['c', 'd']);
+  nav(0, 'End');
+  assert.match(elements.current.textContent, /d/);
+  elements['filter-running'].listeners.get('click')();
+  assert.deepEqual(order(), ['b', 'a', 'e']);
+  elements['filter-all'].listeners.get('click')();
+  elements['execution-search'].value = 'a';
+  elements['execution-search'].listeners.get('input')({ target: elements['execution-search'] });
+  assert.deepEqual(order(), ['a']);
+  await h.update({ streams: [d, e, c, b] });
+  assert.equal(elements.streams.children[0].className, 'execution-empty');
+  assert.match(elements.streams.textContent, /No executions match/);
+});
+
+test('missing observation time is not fabricated and identity breaks time ties', async () => {
+  const a = stream('a', []), b = stream('b', []);
+  a.latest = {}; b.latest = {};
+  const h = await harness({ streams: [b, a] });
+  assert.deepEqual(h.elements.streams.children.map(node => node.dataset.streamId), ['a', 'b']);
+  assert.equal(h.elements.streams.children[0].children[2].children.length, 1);
+  const css = await readFile(new URL('../dist/dashboard/dashboard.css', import.meta.url), 'utf8');
+  assert.match(css, /\.execution-item\.finished \{[^}]*padding-top: 7px;[^}]*color: var\(--muted\)/);
 });
