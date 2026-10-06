@@ -3,57 +3,117 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Yokodori · executions</title>
+  <title>Yokodori · execution observation</title>
   <link rel="stylesheet" href="/dashboard.css">
 </head>
 <body>
   <div class="shell">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark">YOKODORI</span><span class="brand-subtitle">execution observation</span></div>
+      <div class="brand">
+        <span class="brand-mark">YOKODORI</span>
+        <span class="brand-subtitle">execution observation</span>
+      </div>
       <div class="topbar-spacer"></div>
       <span class="status-chip"><span class="status-dot"></span>local daemon</span>
       <span class="status-chip">read only</span>
     </header>
+
     <div class="workspace">
       <aside class="rail" aria-label="Execution navigation">
-        <p class="eyebrow">Observation streams</p>
-        <h2>Executions</h2>
+        <div class="rail-heading">
+          <p class="eyebrow">Observation</p>
+          <h2>Executions</h2>
+        </div>
+
+        <label class="search-box">
+          <span class="sr-only">Search executions</span>
+          <input id="execution-search" type="search" autocomplete="off" placeholder="Search executions" aria-label="Search executions">
+        </label>
+
+        <div class="filter-group" role="group" aria-label="Execution state filter">
+          <button id="filter-all" class="filter-button" type="button" aria-pressed="true">All <span id="count-all">0</span></button>
+          <button id="filter-running" class="filter-button" type="button" aria-pressed="false">Running <span id="count-running">0</span></button>
+          <button id="filter-finished" class="filter-button" type="button" aria-pressed="false">Finished <span id="count-finished">0</span></button>
+        </div>
+
         <nav id="streams" class="execution-list" aria-label="Executions"></nav>
-        <p id="current" class="execution-summary" aria-live="polite">Awaiting stream</p>
+        <p id="current" class="sr-only" aria-live="polite">Awaiting stream</p>
       </aside>
+
       <main class="main">
-        <header class="hero">
-          <p class="eyebrow">Selected execution</p>
-          <h1 id="execution-title">Awaiting stream</h1>
-          <p id="execution-meta" class="muted">Conversation and observation evidence</p>
+        <header class="execution-header">
+          <div class="execution-heading">
+            <p class="eyebrow">Selected execution</p>
+            <div class="execution-title-row">
+              <h1 id="execution-title">Awaiting stream</h1>
+              <span id="execution-status" class="state-badge state-neutral">Waiting</span>
+            </div>
+            <div id="execution-meta" class="execution-meta">Conversation and observation evidence</div>
+          </div>
         </header>
-        <section class="panel" aria-labelledby="conversation-title">
-          <div class="panel-head"><h2 id="conversation-title">Conversation</h2><span class="panel-meta">retained messages · bounded memory</span></div>
+
+        <div class="view-tabs" role="tablist" aria-label="Execution view">
+          <button id="tab-conversation" class="view-tab" type="button" role="tab" aria-selected="true" aria-controls="view-conversation">Conversation</button>
+          <button id="tab-timeline" class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="view-timeline">Timeline</button>
+          <button id="tab-git" class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="view-git">Git</button>
+        </div>
+
+        <section id="view-conversation" class="view-panel" role="tabpanel" aria-labelledby="tab-conversation">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Live transcript</p>
+              <h2>Conversation</h2>
+            </div>
+            <span class="section-note">bounded daemon memory</span>
+          </div>
           <div id="conversation" class="conversation"></div>
         </section>
-        <section class="panel timeline-panel" aria-labelledby="timeline-title">
-          <div class="panel-head"><h2 id="timeline-title">Execution timeline</h2><span class="panel-meta">source observations</span></div>
+
+        <section id="view-timeline" class="view-panel" role="tabpanel" aria-labelledby="tab-timeline" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Source evidence</p>
+              <h2>Execution timeline</h2>
+            </div>
+            <span class="section-note">canonical observations</span>
+          </div>
           <ol id="timeline" class="timeline"></ol>
         </section>
+
+        <section id="view-git" class="view-panel" role="tabpanel" aria-labelledby="tab-git" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Repository evidence</p>
+              <h2>Git observation</h2>
+            </div>
+            <span class="section-note">latest observed fact</span>
+          </div>
+          <div id="repo" class="git-detail"></div>
+        </section>
       </main>
+
       <aside class="inspector" aria-label="Contextual inspector">
-        <section id="message-inspector" class="section" aria-live="polite"></section>
-        <section class="section evidence">
-          <p class="eyebrow">Repository observation</p>
-          <div id="repo" class="detail-value">No Git observation yet</div>
-        </section>
-        <section class="section evidence">
-          <p class="eyebrow">Context certification</p>
-          <div id="context" class="detail-value">Not compiled · not injected · not observed</div>
-        </section>
-        <section class="section evidence">
-          <p class="eyebrow">Conversation retention</p>
-          <div id="retention" class="detail-value">No retained messages</div>
-        </section>
-        <section class="section evidence">
-          <p class="eyebrow">Evidence classes</p>
-          <p class="muted">Git: observed fact · Context: certified evidence · Classification: probabilistic Hachidori inference.</p>
-        </section>
+        <section id="message-inspector" class="inspector-primary" aria-live="polite"></section>
+
+        <details id="execution-evidence" class="evidence-disclosure" open>
+          <summary>Execution evidence</summary>
+
+          <section class="inspector-section">
+            <div class="inspector-section-heading">
+              <p class="eyebrow">Observation health</p>
+              <h2>Context certification</h2>
+            </div>
+            <div id="context" class="status-stack"></div>
+          </section>
+
+          <section class="inspector-section">
+            <div class="inspector-section-heading">
+              <p class="eyebrow">Bounded memory</p>
+              <h2>Retention</h2>
+            </div>
+            <div id="retention" class="metric-grid"></div>
+          </section>
+        </details>
       </aside>
     </div>
   </div>
