@@ -3,104 +3,60 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Yokodori · current execution</title>
+  <title>Yokodori · executions</title>
   <link rel="stylesheet" href="/dashboard.css">
 </head>
 <body>
   <div class="shell">
     <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark">YOKODORI</div>
-        <div class="brand-subtitle">execution observation</div>
-      </div>
+      <div class="brand"><span class="brand-mark">YOKODORI</span><span class="brand-subtitle">execution observation</span></div>
       <div class="topbar-spacer"></div>
-      <div class="status-chip"><span class="status-dot"></span>local daemon</div>
-      <div class="status-chip">read only</div>
+      <span class="status-chip"><span class="status-dot"></span>local daemon</span>
+      <span class="status-chip">read only</span>
     </header>
-
     <div class="workspace">
       <aside class="rail" aria-label="Execution navigation">
-        <section class="section">
-          <p class="eyebrow">Execution</p>
-          <h2>Current stream</h2>
-          <select id="stream" class="stream-select" aria-label="Observation stream"></select>
-          <div id="current" class="execution-summary">Awaiting stream</div>
-        </section>
-
-        <section class="section">
-          <p class="eyebrow">Signals</p>
-          <div class="signal-list" aria-label="Future semantic signals">
-            <div class="signal"><strong>Checkpoint</strong><span>unavailable</span></div>
-            <div class="signal"><strong>Classification</strong><span>unavailable</span></div>
-            <div class="signal"><strong>Lineage</strong><span>unavailable</span></div>
-          </div>
-        </section>
+        <p class="eyebrow">Observation streams</p>
+        <h2>Executions</h2>
+        <nav id="streams" class="execution-list" aria-label="Executions"></nav>
+        <p id="current" class="execution-summary" aria-live="polite">Awaiting stream</p>
       </aside>
-
       <main class="main">
-        <div class="hero">
-          <div class="hero-copy">
-            <p class="eyebrow">Current execution</p>
-            <h1>What the agent is doing now</h1>
-            <p>Conversation first; execution evidence stays visible without becoming the product surface.</p>
-          </div>
-        </div>
-
+        <header class="hero">
+          <p class="eyebrow">Selected execution</p>
+          <h1 id="execution-title">Awaiting stream</h1>
+          <p id="execution-meta" class="muted">Conversation and observation evidence</p>
+        </header>
         <section class="panel" aria-labelledby="conversation-title">
-          <div class="panel-head">
-            <h2 id="conversation-title">Conversation</h2>
-            <div class="panel-meta">bounded daemon memory</div>
-          </div>
-          <div id="conversation" class="conversation">
-            <div class="conversation-empty">
-              <div>
-                <strong>No retained conversation observations yet</strong>
-                User and assistant messages will appear here when <code>message.observed</code> is available.
-              </div>
-            </div>
-          </div>
+          <div class="panel-head"><h2 id="conversation-title">Conversation</h2><span class="panel-meta">retained messages · bounded memory</span></div>
+          <div id="conversation" class="conversation"></div>
         </section>
-
-        <section class="panel" aria-labelledby="timeline-title">
-          <div class="panel-head">
-            <h2 id="timeline-title">Execution timeline</h2>
-            <div class="panel-meta">canonical observation events</div>
-          </div>
+        <section class="panel timeline-panel" aria-labelledby="timeline-title">
+          <div class="panel-head"><h2 id="timeline-title">Execution timeline</h2><span class="panel-meta">source observations</span></div>
           <ol id="timeline" class="timeline"></ol>
         </section>
       </main>
-
-      <aside class="inspector" aria-label="Execution inspector">
-        <section class="section">
-          <p class="eyebrow">Repository</p>
-          <div class="card">
-            <div id="repo" class="card-value">No Git observation yet</div>
-          </div>
+      <aside class="inspector" aria-label="Contextual inspector">
+        <section id="message-inspector" class="section" aria-live="polite"></section>
+        <section class="section evidence">
+          <p class="eyebrow">Repository observation</p>
+          <div id="repo" class="detail-value">No Git observation yet</div>
         </section>
-
-        <section class="section">
+        <section class="section evidence">
           <p class="eyebrow">Context certification</p>
-          <div class="card">
-            <div id="context" class="context-value">Not compiled · not injected · not observed</div>
-          </div>
+          <div id="context" class="detail-value">Not compiled · not injected · not observed</div>
         </section>
-
-        <section class="section">
-          <p class="eyebrow">Observation model</p>
-          <div class="card">
-            <div class="reserved">
-              <div class="reserved-row"><span>Git</span><code>observed fact</code></div>
-              <div class="reserved-row"><span>Context</span><code>certified evidence</code></div>
-              <div class="reserved-row"><span>Conversation</span><code>bounded memory</code></div>
-            </div>
-            <div class="accent-rule"></div>
-            <div class="muted">Checkpoint, classification, and lineage remain reserved until real producers exist.</div>
-          </div>
+        <section class="section evidence">
+          <p class="eyebrow">Conversation retention</p>
+          <div id="retention" class="detail-value">No retained messages</div>
+        </section>
+        <section class="section evidence">
+          <p class="eyebrow">Evidence classes</p>
+          <p class="muted">Git: observed fact · Context: certified evidence · Classification: probabilistic Hachidori inference.</p>
         </section>
       </aside>
     </div>
   </div>
-
   <script src="/dashboard.js" defer></script>
 </body>
 </html>
