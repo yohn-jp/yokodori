@@ -20,7 +20,7 @@ Pi discovers the extension from the package's `pi.extensions` manifest. In the p
 
 The manifest explicitly admits repository-relative UTF-8 text files. Paths and ranks must be unique; ranks are non-negative integers and determine model-visible source order, regardless of array order. No globs or implicit discovery are supported. The package reads and compiles these files once at session start, appends the frozen context through `before_agent_start` on the first ordinary request, and observes the injected section at `context_with_system`. An absent manifest leaves the package unconfigured; invalid manifests report configuration failure. `/yokodori` or `/yokodori status` displays bounded state and independently calculated observed-section digest equality without revealing source contents or the raw transcript. This certifies the Pi observation boundary, not provider-effective equivalence. No command or user-created `DefaultResourceLoader` is required before the first request.
 
-The package integration is tested with `@earendil-works/pi-coding-agent` 1.0.2, which requires Node.js 22.19 or newer. Yokodori retains its Node.js `>=22` engine floor for SDK compatibility. The Pi host package is an optional peer dependency: Pi supplies its own runtime, and SDK-only installs do not pull in a separate Pi runtime.
+The package integration is tested with `@earendil-works/pi-coding-agent` 1.0.0, which requires Node.js 22.19 or newer. Yokodori retains its Node.js `>=22` engine floor for SDK compatibility. The Pi host package is an optional peer dependency: Pi supplies its own runtime, and SDK-only installs do not pull in a separate Pi runtime.
 
 ## Install as an SDK dependency
 
