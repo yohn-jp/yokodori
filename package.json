@@ -1,6 +1,6 @@
 {
   "name": "yokodori",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": false,
   "type": "module",
   "engines": {
@@ -16,7 +16,9 @@
       "import": "./dist/adapters/pi/index.js"
     }
   },
-  "bin": { "yokodori": "dist/daemon/cli.js" },
+  "bin": {
+    "yokodori": "dist/daemon/cli.js"
+  },
   "files": [
     "dist",
     "README.md",
