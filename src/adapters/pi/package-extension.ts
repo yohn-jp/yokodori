@@ -9,7 +9,7 @@ import { observeGit } from './git-observation.js';
 
 type Status = { state: 'unconfigured' | 'ready' | 'observed' | 'configuration_failure' | 'certification_failure';
   instructionFile: string; sourceCount?: number; compiledDigest?: string; requestSequence?: number;
-  boundary?: string; complete?: boolean; observedInjectedDigest?: string; matched?: boolean; failure?: string };
+  boundary?: string; complete?: boolean; observedInjectedDigest?: string; matched?: boolean; failure?: string;\n  omittedFieldCount?: number; omittedFields?: string[]; bridge?: ReturnType<ReturnType<typeof createBridge>['status']> };
 type MessagePayload = Extract<ObservationEventV1, { kind: 'message.observed' }>['payload'];
 
 function utf8Prefix(value: string, maxBytes: number): { text: string; bytes: number } {
@@ -125,7 +125,7 @@ export default function yokodoriPackageExtension(pi: ExtensionAPI): void {
     description: 'Show bounded Yokodori instruction and observation status',
     handler: async (args, ctx) => {
       if (args.trim() && args.trim() !== 'status') { ctx.ui.notify('Usage: /yokodori [status]', 'error'); return; }
-      ctx.ui.notify(JSON.stringify(status), status.state.endsWith('failure') ? 'error' : 'info');
+      const report = { ...status, bridge: bridge.status() };\n      ctx.ui.notify(JSON.stringify(report), status.state.endsWith('failure') ? 'error' : 'info');
     },
   });
 }
