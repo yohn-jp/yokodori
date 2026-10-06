@@ -91,11 +91,21 @@ test('failed, unavailable, absent metadata and no classification do not invent s
   assert.match(h.elements.conversation.textContent, /D/);
 });
 
+test('classification state does not repeat an identical failure token', async () => {
+  const a = stream('a', [message(2, 'A')], [annotation(2, 'unavailable', { failure: 'UNAVAILABLE' })]);
+  const h = await harness({ streams: [a] });
+  click(buttons(h.elements)[0]);
+  const pane = h.elements['message-inspector'];
+  assert.match(pane.textContent, /unavailable/);
+  assert.doesNotMatch(pane.textContent, /UNAVAILABLE/);
+});
+
 test('first-party responsive layout keeps the document in one column at narrow widths', async () => {
   const css = await readFile(new URL('../dist/dashboard/dashboard.css', import.meta.url), 'utf8');
   const html = await readFile(new URL('../dist/dashboard/index.html', import.meta.url), 'utf8');
   assert.match(css, /@media \(max-width: 760px\)\s*\{[\s\S]*?\.workspace \{ display: flex; flex-direction: column; \}/);
   assert.match(css, /\.execution-list \{ display: flex; overflow-x: auto;/);
+  assert.match(css, /\.message-shell \{[^}]*display: block/);
   assert.match(css, /\.message-text \{[^}]*overflow-wrap: anywhere/);
   assert.match(html, /name="viewport"/);
   assert.doesNotMatch(html, /https?:\/\//);
