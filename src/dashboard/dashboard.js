@@ -226,7 +226,7 @@ function renderConversation(stream) {
   if (!messages.length) {
     const empty = document.createElement('div');
     empty.className = 'conversation-empty';
-    text(empty, 'strong', '', 'No retained conversation observations');
+    text(empty, 'strong', '', 'No retained conversation observations yet');
     text(empty, 'span', '', 'Messages appear here when the harness emits bounded conversation evidence.');
     conversation.append(empty);
     return;
@@ -280,7 +280,7 @@ function renderConversation(stream) {
       });
     } else {
       const statusText = annotation ? annotation.status : 'not classified';
-      text(chips, 'span', 'classification-state ' + (annotation ? annotation.status : ''), statusText);
+      text(chips, 'span', 'classification-state ' + (annotation ? annotation.status : ''), 'Classification ' + statusText);
     }
     shell.append(chips);
     button.append(shell);
