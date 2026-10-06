@@ -212,6 +212,75 @@ function renderExecutionHeader(stream) {
   current.textContent = stream.streamId + ' · ' + state;
 }
 
+function latestActivity(stream) {
+  return (stream.classifications || []).filter(function (item) {
+    return item.status === 'complete' && (item.axes || []).some(function (axis) { return axis.id === 'activity' && axis.choice !== undefined; });
+  }).sort(function (a, b) { return b.sourceSequence - a.sourceSequence; })[0];
+}
+
+function renderCurrentState(stream) {
+  const pane = document.getElementById('current-state');
+  pane.replaceChildren();
+  if (!stream) return;
+  const row = function (label, value) { detailRow(pane, label, value); };
+  row('Execution · stream state', stream.closed ? 'Finished' : 'Active');
+  const activity = latestActivity(stream);
+  if (activity) row('Activity · latest classification #' + activity.sourceSequence,
+    activity.axes.find(function (axis) { return axis.id === 'activity'; }).choice);
+  const context = stream.latest && stream.latest['context.observed'];
+  if (context && context.payload) row('Context · observation #' + context.sequence,
+    !context.payload.complete ? 'Partial' : context.payload.certification === 'MATCH' ? 'Certified' : 'Mismatch');
+  const last = (stream.messages || []).at(-1);
+  if (last) row('Conversation · last observed #' + last.sequence, last.role + (formatTime(last.observedAt) ? ' · ' + formatTime(last.observedAt) : ''));
+  const git = gitFor(stream);
+  if (git && ['clean', 'dirty', 'unknown'].includes(git.dirty)) row('Git · latest observation', git.dirty[0].toUpperCase() + git.dirty.slice(1));
+}
+
+function renderHealth(stream) {
+  const pane = document.getElementById('health');
+  pane.replaceChildren();
+  if (!stream) return;
+  const issues = [];
+  const context = stream.latest && stream.latest['context.observed'];
+  if (context && context.payload) {
+    if (context.payload.certification !== 'MATCH') issues.push(['Context certification', context.payload.certification + ' · context observation #' + context.sequence]);
+    if (!context.payload.complete) issues.push(['Context completeness', 'Partial · context observation #' + context.sequence]);
+  }
+  if (stream.messageHistory && stream.messageHistory.incomplete) issues.push(['Message history', 'Incomplete · retention evidence']);
+  const truncated = (stream.messages || []).filter(function (item) { return item.truncated; });
+  if (truncated.length) issues.push(['Message truncation', 'Retained message ' + truncated.map(function (item) { return '#' + item.sequence; }).join(', ')]);
+  const selected = (stream.classifications || []).find(function (item) { return item.sourceSequence === selectedMessageSequence; });
+  const latest = (stream.classifications || []).reduce(function (a, b) { return !a || b.sourceSequence > a.sourceSequence ? b : a; }, null);
+  const classification = selected || latest;
+  if (classification && ['failed', 'unavailable'].includes(classification.status))
+    issues.push(['Hachidori classification', classification.status + ' · source #' + classification.sourceSequence + ' · ' + classification.classificationId]);
+  const git = stream.latest && stream.latest['git.observed'];
+  if (git && git.payload && git.payload.dirty === 'dirty') issues.push(['Git observation', 'Dirty · observation #' + git.sequence]);
+  if (!issues.length) {
+    text(pane, 'p', 'health-ok', 'Healthy · No observed issues');
+  } else issues.forEach(function (issue) {
+    detailRow(pane, issue[0], issue[1]);
+  });
+}
+
+function renderRelatedEvidence(pane, stream, message, result) {
+  const section = document.createElement('section');
+  section.className = 'related-evidence';
+  text(section, 'h3', '', 'Related evidence');
+  detailRow(section, 'Selected message', '#' + message.sequence);
+  if (result) detailRow(section, 'Attached classification', result.classificationId + ' · ' + result.status + ' · source #' + result.sourceSequence);
+  ['context.observed', 'git.observed'].forEach(function (kind) {
+    const preceding = (stream.events || []).filter(function (event) { return event.kind === kind && event.sequence < message.sequence; })
+      .reduce(function (a, b) { return !a || b.sequence > a.sequence ? b : a; }, null);
+    if (preceding) detailRow(section, 'Preceding ' + (kind === 'git.observed' ? 'Git' : 'context') + ' observation', '#' + preceding.sequence + ' · ' + kind);
+  });
+  const messages = stream.messages || [];
+  const index = messages.findIndex(function (item) { return item.sequence === message.sequence; });
+  if (index > 0) detailRow(section, 'Previous retained message', '#' + messages[index - 1].sequence);
+  if (index >= 0 && index < messages.length - 1) detailRow(section, 'Next retained message', '#' + messages[index + 1].sequence);
+  pane.append(section);
+}
+
 function renderViewState() {
   Object.keys(viewTabs).forEach(function (name) {
     viewTabs[name].setAttribute('aria-selected', String(name === activeView));
@@ -289,6 +358,7 @@ function renderConversation(stream) {
       selectedMessageSequence = message.sequence;
       renderConversation(currentStream());
       renderInspector(currentStream());
+      renderHealth(currentStream());
     });
 
     item.append(button);
@@ -427,6 +497,7 @@ function renderInspector(stream) {
   text(pane, 'p', 'muted', 'Probabilistic semantic observation · not execution fact');
 
   const result = classificationFor(stream, message);
+  renderRelatedEvidence(pane, stream, message, result);
   if (!result || result.status !== 'complete') {
     renderClassificationState(pane, result);
     return;
@@ -480,6 +551,8 @@ function render() {
   const stream = currentStream();
   renderStreams();
   renderExecutionHeader(stream);
+  renderCurrentState(stream);
+  renderHealth(stream);
   renderViewState();
   renderConversation(stream);
   renderTimeline(stream);

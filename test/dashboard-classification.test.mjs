@@ -12,7 +12,7 @@ class Element {
   addEventListener(type, fn) { this.listeners.set(type, fn); }
   setAttribute(name, value) { this[name] = value; }
 }
-const ids = ['streams','current','repo','context','retention','timeline','conversation','message-inspector','execution-title','execution-meta','execution-status','execution-search','count-all','count-running','count-finished','filter-all','filter-running','filter-finished','tab-conversation','tab-timeline','tab-git','view-conversation','view-timeline','view-git','execution-evidence'];
+const ids = ['streams','current','repo','context','retention','timeline','conversation','message-inspector','execution-title','execution-meta','execution-status','execution-search','count-all','count-running','count-finished','filter-all','filter-running','filter-finished','tab-conversation','tab-timeline','tab-git','view-conversation','view-timeline','view-git','execution-evidence','current-state','health'];
 const axes = [
   { id: 'activity', choice: 'implement', confidence: .34, probabilities: { implement: .34, test: .33, other: .33 } },
   { id: 'intent', choice: 'instruction', confidence: 1, probabilities: { instruction: 1, other: 0 } },
@@ -40,6 +40,42 @@ async function harness(initial) {
   await runInNewContext(script, context);
   return { elements, requests, live, update: async next => { snapshot = next; await live.listeners.get('update')(); } };
 }
+
+test('derived state, ordered related evidence and quiet health use retained observations', async () => {
+  const a = stream('a', [message(10, 'A'), message(20, 'B')], [annotation(10, 'complete'), annotation(20, 'complete')]);
+  a.messageHistory = { ...history, incomplete: false };
+  a.events = [
+    { kind: 'context.observed', sequence: 3 }, { kind: 'git.observed', sequence: 4 },
+    { kind: 'context.observed', sequence: 8 }, { kind: 'git.observed', sequence: 9 },
+    { kind: 'context.observed', sequence: 21 }, { kind: 'git.observed', sequence: 22 },
+  ];
+  const h = await harness({ streams: [a] });
+  assert.match(h.elements['current-state'].textContent, /Execution · stream stateActive.*Activity · latest classification #20implement.*Context.*Certified.*Conversation.*user.*Git.*Clean/);
+  assert.equal(h.elements.health.textContent, 'Healthy · No observed issues');
+  click(buttons(h.elements)[0]);
+  const related = h.elements['message-inspector'].children.find(node => node.className === 'related-evidence');
+  assert.match(related.textContent, /Selected message#10Attached classificationmessage:id-10 · complete · source #10/);
+  assert.match(related.textContent, /Preceding context observation#8.*Preceding Git observation#9.*Next retained message#20/);
+  assert.doesNotMatch(related.textContent, /#21|#22|caused by/i);
+  assert.equal(h.elements['view-conversation'].hidden, false);
+});
+
+test('missing evidence stays absent; observed anomalies retain distinct source states', async () => {
+  const a = stream('a', [message(2, 'A', true), message(3, 'B')], [annotation(2, 'unavailable'), annotation(3, 'failed')]);
+  a.latest = {};
+  a.messageHistory = { ...history };
+  const h = await harness({ streams: [a] });
+  assert.doesNotMatch(h.elements['current-state'].textContent, /Activity|Context|Git/);
+  assert.match(h.elements.health.textContent, /Message historyIncomplete.*Message truncationRetained message #2.*Hachidori classificationfailed/);
+  click(buttons(h.elements)[0]);
+  assert.match(h.elements.health.textContent, /unavailable/);
+  assert.doesNotMatch(h.elements.health.textContent, /0%/);
+  a.latest = { 'context.observed': { sequence: 7, payload: { certification: 'MISMATCH', complete: false } },
+    'git.observed': { sequence: 8, payload: { dirty: 'dirty' } } };
+  await h.update({ streams: [a] });
+  assert.match(h.elements.health.textContent, /Context certificationMISMATCH.*Context completenessPartial.*Git observationDirty/);
+  assert.match(h.elements['current-state'].textContent, /Context · observation #7Partial.*Git · latest observationDirty/);
+});
 
 test('message collection, complete low-confidence chips and modeless per-axis inspector', async () => {
   const a = stream('a', [message(2, 'first'), message(3, 'second', true)], [annotation(2, 'complete',

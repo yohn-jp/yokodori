@@ -52,6 +52,8 @@
           </div>
         </header>
 
+        <section id="current-state" class="current-state" aria-label="Current state derived from observations"></section>
+
         <div class="view-tabs" role="tablist" aria-label="Execution view">
           <button id="tab-conversation" class="view-tab" type="button" role="tab" aria-selected="true" aria-controls="view-conversation">Conversation</button>
           <button id="tab-timeline" class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="view-timeline">Timeline</button>
@@ -94,6 +96,11 @@
 
       <aside class="inspector" aria-label="Contextual inspector">
         <section id="message-inspector" class="inspector-primary" aria-live="polite"></section>
+
+        <section class="inspector-section health-section" aria-label="Execution observation health">
+          <h2>Observation health</h2>
+          <div id="health"></div>
+        </section>
 
         <details id="execution-evidence" class="evidence-disclosure" open>
           <summary>Execution evidence</summary>
